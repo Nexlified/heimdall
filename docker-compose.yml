@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   nats:
     image: nats:2.10-alpine
@@ -58,7 +56,7 @@ services:
     command: "serve all --dangerous-force-http"
 
   cerbos:
-    image: ghcr.io/cerbos/cerbos:0.35
+    image: docker.io/cerbos/cerbos:0.47.0
     ports:
       - "3592:3592"  # gRPC (Admin)
       - "3593:3593"  # HTTP
