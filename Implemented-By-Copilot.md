@@ -294,3 +294,131 @@ This file tracks the implementations completed by GitHub Copilot for the Heimdal
 - The implementation supports multi-tenancy through scopes
 - The handler implementation meets the requirement to return 200 OK for allow and 403 Forbidden for deny
 - PlanResources and UpdateAttributes are stubs for future implementation
+
+## Issue #5: Implement PolicyEngine 'PlanResources' method for Cerbos
+
+**Date**: 2025-11-16
+
+**Summary**: Implemented the `PlanResources` method of the `core.PolicyEngine` interface to solve the N+1 query problem using the Cerbos Go SDK.
+
+### Files Modified:
+- `internal/plugins/authz/cerbos/cerbos.go` - Implemented PlanResources method and added request structures
+- `internal/plugins/authz/cerbos/cerbos_test.go` - Added comprehensive unit tests for PlanResources
+
+### Implementation Details:
+
+#### 1. New Data Structures
+- `PlanResourcesRequest`: JSON structure for PlanResources API requests
+  - `Principal`: Reference to PrincipalData (user making the request)
+  - `Resource`: Reference to ResourceData (resource template without specific ID)
+  - `Actions`: Array of actions to plan for
+- `ResourceData`: Resource template structure
+  - `Kind`: Type of resource (e.g., "document", "project")
+  - `Attributes`: Optional resource attributes map
+  - `Scope`: Optional scope for multi-tenancy
+
+#### 2. PlanResources Method Implementation
+- Accepts `context.Context` and raw JSON bytes as parameters
+- Validates planRequest is not empty
+- Unmarshals JSON into `PlanResourcesRequest` structure
+- Validates request structure:
+  - Principal is required
+  - Resource is required
+  - At least one action is required
+- Builds Cerbos SDK Principal with:
+  - Principal ID and roles
+  - Optional attributes map
+  - Optional scope
+- Builds Cerbos SDK Resource for planning:
+  - Resource kind with empty ID (template pattern)
+  - Optional resource attributes
+  - Optional resource scope
+- Calls `cerbosClient.PlanResources(ctx, principal, resource, actions...)`
+- Marshals the Cerbos `PlanResourcesResponse` back to JSON
+- Returns the marshaled JSON response
+
+#### 3. Key Implementation Notes
+- PlanResources uses a resource template (no specific ID) to generate query plans for filtering lists
+- This solves the N+1 query problem by providing a query plan that can filter resources in the database
+- Follows the same pattern as the Check method for consistency
+- Supports all principal and resource attributes including scopes for multi-tenancy
+
+### Test Coverage:
+
+#### Unit Tests Created:
+1. **TestPlanResources_Validation**: Tests validation logic
+   - Empty request
+   - Invalid JSON
+   - Missing principal
+   - Missing resource
+   - Missing actions (empty array)
+   - No actions field
+
+2. **TestPlanResourcesRequest_Unmarshal**: Tests JSON unmarshaling
+   - Valid request with attributes
+   - Valid request with scope
+   - Minimal valid request
+   - Invalid JSON
+   - Empty JSON
+
+3. **TestPlanResources_Integration**: Integration test (skipped without running Cerbos)
+   - Tests full request/response flow with real Cerbos instance
+
+#### Test Results:
+- All tests pass ✅
+- 6 validation test cases
+- 5 unmarshaling test cases
+- No linting issues ✅
+- No `go vet` warnings ✅
+- Builds successfully ✅
+
+### Example Request Format:
+```json
+{
+  "principal": {
+    "id": "user123",
+    "roles": ["user", "viewer"],
+    "attr": {
+      "department": "engineering"
+    },
+    "scope": "tenant:acme"
+  },
+  "resource": {
+    "kind": "document",
+    "attr": {
+      "public": false
+    },
+    "scope": "tenant:acme"
+  },
+  "actions": ["view", "edit"]
+}
+```
+
+### Key Design Decisions:
+
+1. **Resource Template Pattern**: PlanResources uses a resource without a specific ID to describe a set of resources, not a concrete instance
+
+2. **Context-aware**: Method accepts `context.Context` for cancellation and timeouts
+
+3. **JSON-based Interface**: Accepts and returns raw JSON bytes, maintaining decoupling from Cerbos-specific types
+
+4. **Comprehensive Validation**: Ensures all required fields are present before calling Cerbos
+
+5. **Scope Support**: Full support for principal and resource scopes for multi-tenancy
+
+6. **Error Handling**: Descriptive error messages with wrapped errors for debugging
+
+7. **Consistency**: Follows the same implementation pattern as the Check method
+
+8. **Testability**: Mock-friendly design with comprehensive test coverage
+
+9. **Comments**: Added detailed comments explaining the N+1 problem and implementation approach
+
+### Notes:
+- The implementation enables efficient list filtering without making individual authorization checks
+- This solves the N+1 query problem by returning a query plan that can be used to filter resources at the database level
+- The implementation follows the project's "Orchestrate, Don't Create" philosophy by wrapping the Cerbos SDK
+- The code is written against the `core.PolicyEngine` interface as required
+- The implementation supports multi-tenancy through scopes
+- Only UpdateAttributes remains as a stub for future implementation
+
