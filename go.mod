@@ -7,6 +7,7 @@ toolchain go1.24.10
 require (
 	aidanwoods.dev/go-paseto v1.5.4
 	github.com/cerbos/cerbos-sdk-go v0.3.13
+	github.com/cerbos/cerbos/api/genpb v0.47.0
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/ory/hydra-client-go/v2 v2.2.1
 	github.com/ory/kratos-client-go v1.3.8
@@ -23,7 +24,6 @@ require (
 	filippo.io/age v1.2.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/bits-and-blooms/bitset v1.24.0 // indirect
-	github.com/cerbos/cerbos/api/genpb v0.47.0 // indirect
 	github.com/cerbos/cloud-api v0.1.62 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
