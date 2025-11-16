@@ -108,6 +108,16 @@ The fastest way to run Heimdall with all dependencies:
 git clone https://github.com/Nexlified/heimdall.git
 cd heimdall
 
+# Create .env file from example
+cp .env.example .env
+
+# Edit .env file and set secure values for:
+# - POSTGRES_PASSWORD
+# - KRATOS_DSN
+# - HYDRA_OIDC_SALT
+# - HYDRA_SECRETS_SYSTEM
+# - PASETO_SYMMETRIC_KEY (must be exactly 32 bytes)
+
 # Start all services (Heimdall, Kratos, Hydra, Cerbos, NATS)
 docker-compose up -d
 
@@ -124,28 +134,58 @@ This starts:
 
 ### Configuration
 
-Heimdall is configured via environment variables:
+Heimdall is configured via environment variables. For local development, copy the `.env.example` file to `.env` and customize the values:
 
 ```bash
-# Identity Provider (Ory Kratos/Hydra)
-KRATOS_ADMIN_URL=http://kratos:4434
-HYDRA_ADMIN_URL=http://hydra:4445
-HYDRA_PUBLIC_URL=http://localhost:4444
-
-# Policy Engine (Cerbos)
-CERBOS_GRPC_URL=cerbos:3592
-
-# Token Service (PASETO)
-PASETO_SYMMETRIC_KEY=your-32-byte-secret-key-here!!!
-
-# Event Consumer (NATS)
-NATS_URL=nats://nats:4222
-
-# Server
-PORT=8080
+cp .env.example .env
 ```
 
-**Important**: The `PASETO_SYMMETRIC_KEY` must be exactly 32 bytes for AES-256.
+#### Required Environment Variables
+
+The following environment variables **must** be set (they have no defaults):
+
+```bash
+# Database password for Kratos
+POSTGRES_PASSWORD=your-secure-database-password
+
+# Kratos database connection string
+KRATOS_DSN=postgres://kratos:your-password@kratos-db:5432/kratos?sslmode=disable&max_conns=20
+
+# Hydra OIDC pairwise salt (used for subject identifier generation)
+HYDRA_OIDC_SALT=a-very-secret-salt-change-this
+
+# Hydra system secrets (used for encryption)
+HYDRA_SECRETS_SYSTEM=you-should-change-this-to-a-long-random-string
+
+# PASETO symmetric key (MUST be exactly 32 bytes for AES-256)
+PASETO_SYMMETRIC_KEY=change-this-to-32-byte-secret!!
+```
+
+#### Optional Environment Variables (with defaults)
+
+```bash
+# PostgreSQL database configuration
+POSTGRES_USER=kratos                           # Default: kratos
+POSTGRES_DB=kratos                             # Default: kratos
+
+# Service connection URLs
+NATS_URL=nats://nats:4222                      # Default: nats://nats:4222
+KRATOS_ADMIN_URL=http://kratos:4434            # Default: http://kratos:4434
+HYDRA_ADMIN_URL=http://hydra:4445              # Default: http://hydra:4445
+CERBOS_GRPC_URL=cerbos:3592                    # Default: cerbos:3592
+
+# Hydra DSN (use 'memory' for dev, postgres for production)
+HYDRA_DSN=memory                               # Default: memory
+
+# Server configuration
+PORT=8080                                       # Default: 8080
+```
+
+**Security Note**: Never commit your `.env` file to version control. It's already included in `.gitignore`.
+
+#### Example .env file
+
+See `.env.example` for a complete template with all available options.
 
 ---
 

@@ -4,16 +4,16 @@ services:
   nats:
     image: nats:2.10-alpine
     ports:
-      - "4222:4222" # Client port
-      - "8222:8222" # Monitoring port
-    command: "-js -m 8222" # Enable JetStream (for persistence)
+      - "4222:4222"  # Client port
+      - "8222:8222"  # Monitoring port
+    command: "-js -m 8222"  # Enable JetStream (for persistence)
 
   kratos-db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: kratos
-      POSTGRES_PASSWORD: secret-password
-      POSTGRES_DB: kratos
+      POSTGRES_USER: ${POSTGRES_USER:-kratos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-kratos}
     ports:
       - "5432:5432"
     volumes:
@@ -22,48 +22,55 @@ services:
   kratos:
     image: oryd/kratos:v1.1
     ports:
-      - "4433:4433" # Public API
-      - "4434:4434" # Admin API
+      - "4433:4433"  # Public API
+      - "4434:4434"  # Admin API
     depends_on:
       - kratos-db
     environment:
-      DSN: "postgres://kratos:secret-password@kratos-db:5432/kratos?sslmode=disable&max_conns=20"
+      DSN: ${KRATOS_DSN:?KRATOS_DSN must be set}
       KRATOS_SERVE_PUBLIC_HOST: "http://localhost:4433"
       KRATOS_SERVE_ADMIN_HOST: "http://kratos:4434"
-      KRATOS_COURIER_SMTP_CONNECTION_URI: "smtps://test:test@mailslurper:1025/?skip_ssl_verify=true"
+      KRATOS_COURIER_SMTP_CONNECTION_URI: >-
+        smtps://test:test@mailslurper:1025/?skip_ssl_verify=true
     volumes:
-      -./infra/kratos/:/etc/config/kratos/
-    command: "serve -c /etc/config/kratos/kratos.yml --dev --watch-courier"
+      - ./infra/kratos/:/etc/config/kratos/
+    command: >-
+      serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
 
   hydra:
     image: oryd/hydra:v2.2
     ports:
-      - "4444:4444" # Public API
-      - "4445:4445" # Admin API
+      - "4444:4444"  # Public API
+      - "4445:4445"  # Admin API
     depends_on:
       - kratos
     environment:
-      DSN: "memory" # For dev; use postgres in production
+      DSN: ${HYDRA_DSN:-memory}  # For dev; use postgres in production
       OIDC_SUBJECT_IDENTIFIERS_SUPPORTED_TYPES: "public"
-      OIDC_SUBJECT_IDENTIFIERS_PAIRWISE_SALT: "a-very-secret-salt"
+      OIDC_SUBJECT_IDENTIFIERS_PAIRWISE_SALT: >-
+        ${HYDRA_OIDC_SALT:?HYDRA_OIDC_SALT must be set}
       URLS_SELF_ISSUER: "http://localhost:4444/"
-      URLS_LOGIN: "http://localhost:4433/self-service/login/browser" # Point to Kratos
-      URLS_CONSENT: "http://localhost:8080/consent" # Point to Heimdall (or a UI)
-      SECRETS_SYSTEM: "you-should-change-this"
+      # Point to Kratos
+      URLS_LOGIN: "http://localhost:4433/self-service/login/browser"
+      # Point to Heimdall (or a UI)
+      URLS_CONSENT: "http://localhost:8080/consent"
+      SECRETS_SYSTEM: ${HYDRA_SECRETS_SYSTEM:?HYDRA_SECRETS_SYSTEM must be set}
     command: "serve all --dangerous-force-http"
 
   cerbos:
     image: ghcr.io/cerbos/cerbos:0.35
     ports:
-      - "3592:3592" # gRPC (Admin)
-      - "3593:3593" # HTTP
+      - "3592:3592"  # gRPC (Admin)
+      - "3593:3593"  # HTTP
     volumes:
-      -./infra/cerbos/policies:/policies
-    command: "server --config=/policies/config.yaml --set=storage.disk.directory=/policies"
+      - ./infra/cerbos/policies:/policies
+    command: >-
+      server --config=/policies/config.yaml
+      --set=storage.disk.directory=/policies
 
   heimdall:
     build:
-      context:.
+      context: .
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
@@ -73,11 +80,13 @@ services:
       - hydra
       - cerbos
     environment:
-      NATS_URL: "nats://nats:4222"
-      KRATOS_ADMIN_URL: "http://kratos:4434"
-      HYDRA_ADMIN_URL: "http://hydra:4445"
-      CERBOS_GRPC_URL: "cerbos:3592"
-      PASETO_SYMMETRIC_KEY: "a-very-secret-key-that-is-32-bytes" # Must be 32 bytes
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      KRATOS_ADMIN_URL: ${KRATOS_ADMIN_URL:-http://kratos:4434}
+      HYDRA_ADMIN_URL: ${HYDRA_ADMIN_URL:-http://hydra:4445}
+      CERBOS_GRPC_URL: ${CERBOS_GRPC_URL:-cerbos:3592}
+      # Must be 32 bytes
+      PASETO_SYMMETRIC_KEY: >-
+        ${PASETO_SYMMETRIC_KEY:?PASETO_SYMMETRIC_KEY must be set}
 
 volumes:
   kratos_data:
