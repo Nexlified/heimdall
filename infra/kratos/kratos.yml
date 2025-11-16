@@ -1,0 +1,27 @@
+version: v1.1.0
+
+serve:
+  public:
+    base_url: http://localhost:4433/
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:8080
+        - http://localhost:3000
+  admin:
+    base_url: http://kratos:4434/
+
+# Point to the database
+dsn: "postgres://kratos:secret-password@kratos-db:5432/kratos?sslmode=disable"
+
+# Minimal required settings
+selfservice:
+  flows:
+    login:
+      ui_url: http://localhost:8080/login # To be handled by our app/UI
+    registration:
+      ui_url: http://localhost:8080/registration # To be handled by our app/UI
+
+log:
+  level: debug
+  format: text
