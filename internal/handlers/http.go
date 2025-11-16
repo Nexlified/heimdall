@@ -130,13 +130,10 @@ func (h *HTTPHandlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
 
 // writeJSON is a simple helper
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	// In a real app, you'd use a more robust JSON encoder
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if data != nil {
-		// Quick and dirty JSON for example purposes
-		b, _ := io.ReadAll(nil) // Placeholder for actual JSON marshalling
-		w.Write(b)
+		json.NewEncoder(w).Encode(data)
 	}
 }
 

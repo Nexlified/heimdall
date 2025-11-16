@@ -9,29 +9,78 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/nexlified/heimdall/internal/core"
 	"github.com/nexlified/heimdall/internal/handlers"
-	// TODO: Import real plugin implementations once created
-	// "github.com/nexlified/heimdall/internal/plugins/authn/kratos"
-	// "github.com/nexlified/heimdall/internal/plugins/authz/cerbos"
-	// "github.com/nexlified/heimdall/internal/plugins/events/nats"
+	"github.com/nexlified/heimdall/internal/plugins/authn/kratos"
+	"github.com/nexlified/heimdall/internal/plugins/authz/cerbos"
+	"github.com/nexlified/heimdall/internal/plugins/events/nats"
+	"github.com/nexlified/heimdall/internal/tokens"
 )
 
 func main() {
 	// --- Configuration ---
-	// In a real app, load this from env vars or a config file
-	_ = os.Getenv("NATS_URL") // natsURL - will be used when EventConsumer is implemented
-	//... other config (Kratos URL, Cerbos URL, PASETO Key)
+	// Load configuration from environment variables
+	kratosAdminURL := os.Getenv("KRATOS_ADMIN_URL")
+	if kratosAdminURL == "" {
+		kratosAdminURL = "http://localhost:4434" // Default for local development
+	}
+
+	hydraAdminURL := os.Getenv("HYDRA_ADMIN_URL")
+	if hydraAdminURL == "" {
+		hydraAdminURL = "http://localhost:4445" // Default for local development
+	}
+
+	hydraPublicURL := os.Getenv("HYDRA_PUBLIC_URL")
+	if hydraPublicURL == "" {
+		hydraPublicURL = "http://localhost:4444" // Default for local development
+	}
+
+	cerbosGRPCURL := os.Getenv("CERBOS_GRPC_URL")
+	if cerbosGRPCURL == "" {
+		cerbosGRPCURL = "localhost:3593" // Default for local development
+	}
+
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		natsURL = "nats://localhost:4222" // Default for local development
+	}
+
+	pasetoKey := os.Getenv("PASETO_SYMMETRIC_KEY")
+	if pasetoKey == "" {
+		log.Fatal("PASETO_SYMMETRIC_KEY environment variable is required (must be exactly 32 bytes)")
+	}
+
+	// --- Initialize Token Service ---
+	// TokenService is used by Kratos client to mint PASETO tokens
+	tokenService, err := tokens.NewTokenService(pasetoKey)
+	if err != nil {
+		log.Fatalf("Failed to initialize token service: %v", err)
+	}
 
 	// --- Pluggable Dependencies ---
 	// Initialize the concrete implementations of our interfaces.
-	// For now, they are nil. Issues will be created to build these.
-	var idp core.IdentityProvider
-	var pdp core.PolicyEngine
-	var consumer core.EventConsumer
 
-	// Example of real initialization (once plugins are built)
-	// idp = kratos.NewKratosClient(os.Getenv("KRATOS_ADMIN_URL"), os.Getenv("HYDRA_ADMIN_URL"))
-	// pdp = cerbos.NewCerbosClient(os.Getenv("CERBOS_GRPC_URL"))
-	// consumer = nats.NewNATSConsumer(natsURL)
+	// Initialize Identity Provider (Kratos/Hydra)
+	idp, err := kratos.NewKratosClient(&kratos.Config{
+		KratosAdminURL: kratosAdminURL,
+		HydraAdminURL:  hydraAdminURL,
+		HydraPublicURL: hydraPublicURL,
+		TokenService:   tokenService,
+	})
+	if err != nil {
+		log.Fatalf("Failed to initialize Kratos client: %v", err)
+	}
+
+	// Initialize Policy Decision Point (Cerbos)
+	pdp, err := cerbos.NewCerbosClient(cerbosGRPCURL)
+	if err != nil {
+		log.Fatalf("Failed to initialize Cerbos client: %v", err)
+	}
+
+	// Initialize NATS Event Consumer
+	consumer, err := nats.NewNATSConsumer(natsURL)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize NATS consumer: %v. Event processing will be disabled.", err)
+		consumer = nil
+	}
 
 	// --- Core Application ---
 	// The core app struct holds its dependencies (the interfaces)
@@ -51,7 +100,7 @@ func main() {
 			}
 		}()
 	} else {
-		log.Println(" EventConsumer is nil. No events will be processed.")
+		log.Println("Warning: EventConsumer is not configured. No events will be processed.")
 	}
 
 	// --- HTTP Server & Routes ---

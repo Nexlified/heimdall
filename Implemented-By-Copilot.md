@@ -2,6 +2,153 @@
 
 This file tracks the implementations completed by GitHub Copilot for the Heimdall project.
 
+## Issue: Implement actual plugins
+
+**Date**: 2025-11-16
+
+**Summary**: Wired up the actual plugin implementations in main.go to fix "Identity Provider not configured" and "Policy Engine not configured" errors.
+
+### Files Modified:
+- `cmd/heimdall/main.go` - Initialized and wired up all plugins
+- `internal/handlers/http.go` - Fixed writeJSON helper function
+- `.env.example` - Fixed PASETO key length and added HYDRA_PUBLIC_URL
+
+### Implementation Details:
+
+#### 1. Configuration Loading
+- Added environment variable loading for all required services:
+  - `KRATOS_ADMIN_URL`: Kratos admin API endpoint
+  - `HYDRA_ADMIN_URL`: Hydra admin API endpoint  
+  - `HYDRA_PUBLIC_URL`: Hydra public OAuth2 endpoint (newly added to .env.example)
+  - `CERBOS_GRPC_URL`: Cerbos gRPC endpoint
+  - `NATS_URL`: NATS server URL
+  - `PASETO_SYMMETRIC_KEY`: 32-byte key for PASETO tokens (required)
+- All environment variables have sensible defaults for local development
+- PASETO_SYMMETRIC_KEY is required and the application will not start without it
+
+#### 2. Plugin Initialization
+- **TokenService**: Initialized with PASETO key from environment
+  - Validates key is exactly 32 bytes
+  - Used by Kratos client to mint tokens
+- **Kratos Client (IDP)**: Initialized with configuration
+  - Connected to Kratos admin API
+  - Connected to Hydra admin and public APIs
+  - Receives TokenService reference for token generation
+- **Cerbos Client (PDP)**: Initialized with gRPC URL
+  - Connected to Cerbos policy decision point
+  - Ready to handle Check and PlanResources requests
+- **NATS Consumer**: Initialized with graceful fallback
+  - Attempts to connect to NATS server
+  - Logs warning and continues if NATS is unavailable
+  - Events processing disabled when NATS unavailable
+
+#### 3. Wiring to Core Application
+- IDP and PDP properly assigned to `core.Application` struct
+- Application passed to HTTP handlers
+- EventConsumer started in background goroutine (if available)
+
+#### 4. Bug Fixes
+- **writeJSON Helper**: Fixed to properly encode JSON
+  - Was using placeholder `io.ReadAll(nil)` 
+  - Now uses `json.NewEncoder(w).Encode(data)`
+- **PASETO Key**: Fixed in .env.example
+  - Was 34 bytes: "a-very-secret-key-that-is-32-bytes"
+  - Now 32 bytes: "12345678901234567890123456789012"
+
+### Testing Results:
+
+#### Before Fix:
+```bash
+# /auth/login endpoint
+HTTP/1.1 500 Internal Server Error
+Identity Provider not configured
+
+# /check endpoint  
+HTTP/1.1 500 Internal Server Error
+Policy Engine not configured
+```
+
+#### After Fix:
+```bash
+# /health endpoint
+HTTP/1.1 200 OK
+{"status":"ok"}
+
+# /auth/login endpoint
+HTTP/1.1 302 Found
+Location: http://localhost:4444/oauth2/auth?...
+
+# /check endpoint
+HTTP/1.1 500 Internal Server Error
+Policy check failed: failed to check resources with Cerbos: 
+rpc error: code = Unavailable desc = connection error
+```
+
+The new errors show that plugins are properly configured and attempting to connect to their respective services (which aren't running in the test environment).
+
+#### Test Suite:
+- ✅ All existing tests pass
+- ✅ No linting issues (go vet clean)
+- ✅ No formatting issues (gofmt clean)
+- ✅ Application builds successfully
+- ✅ Application starts with proper environment variables
+- ✅ Manual endpoint testing confirms plugins are wired
+
+### Key Design Decisions:
+
+1. **Environment-Driven Configuration**: All service URLs and secrets loaded from environment variables following 12-factor app principles
+
+2. **Graceful Degradation**: NATS consumer failure is non-fatal
+   - Application starts successfully even if NATS is unavailable
+   - Logs warning about disabled event processing
+   - Other functionality remains operational
+
+3. **Required vs Optional**: 
+   - PASETO_SYMMETRIC_KEY is required (application won't start without it)
+   - All other variables have sensible defaults for development
+
+4. **Defaults for Development**: Default values point to localhost services
+   - Makes local development easier
+   - Production deployments override with environment variables
+
+5. **Error Messages**: Clear, descriptive error messages for configuration issues
+   - Token service reports exact key length mismatch
+   - Plugin initialization failures include wrapped errors
+
+6. **Security**: 
+   - PASETO key validated for correct length (32 bytes)
+   - Example key in .env.example is for development only
+   - Production deployments must set secure values
+
+### Dependencies:
+
+All plugin dependencies were already in go.mod:
+- `github.com/nexlified/heimdall/internal/plugins/authn/kratos`
+- `github.com/nexlified/heimdall/internal/plugins/authz/cerbos`
+- `github.com/nexlified/heimdall/internal/plugins/events/nats`
+- `github.com/nexlified/heimdall/internal/tokens`
+
+### Integration:
+
+This implementation integrates all previously implemented plugins:
+1. ✅ IdentityProvider (Kratos/Hydra) from Issue #2
+2. ✅ PolicyEngine Check from Issue #3
+3. ✅ PolicyEngine PlanResources from Issue #5
+4. ✅ EventConsumer from Issue #6
+5. ✅ PolicyEngine UpdateAttributes from Issue #7
+6. ✅ Health endpoint fix
+7. ✅ TokenService for PASETO tokens from Issue #1
+
+All components are now wired together and operational.
+
+### Notes:
+- The implementation addresses the exact issue: endpoints no longer return "not configured" errors
+- Plugins are properly initialized and attempting to connect to their services
+- The architecture follows the project's "Orchestrate, Don't Create" philosophy
+- Code is written against interfaces as required
+- All changes are minimal and focused on the specific issue
+- System is production-ready when deployed with proper infrastructure (Kratos, Hydra, Cerbos, NATS running)
+
 ## Issue #2: Implement IdentityProvider interface for Ory Kratos/Hydra
 
 **Date**: 2025-11-16
