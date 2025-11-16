@@ -422,3 +422,195 @@ This file tracks the implementations completed by GitHub Copilot for the Heimdal
 - The implementation supports multi-tenancy through scopes
 - Only UpdateAttributes remains as a stub for future implementation
 
+## Issue #6: Implement EventConsumer interface for NATS JetStream
+
+**Date**: 2025-11-16
+
+**Summary**: Implemented the `core.EventConsumer` interface using NATS JetStream to listen for events from Business and Billing apps and update the AuthZ engine's attributes.
+
+### Files Created:
+- `internal/plugins/events/nats/nats.go` - Main NATS EventConsumer implementation
+- `internal/plugins/events/nats/nats_test.go` - Comprehensive unit tests
+
+### Implementation Details:
+
+#### 1. Consumer Structure
+- Created `Consumer` struct that holds:
+  - NATS connection (`conn`)
+  - JetStream context (`js`)
+
+#### 2. NewNATSConsumer Constructor
+- Accepts a `natsURL` string parameter
+- Validates the natsURL is not empty
+- Connects to NATS server using `nats.Connect()`
+- Creates JetStream context for durable subscriptions
+- Returns error if connection or JetStream initialization fails
+- Properly closes connection on error
+
+#### 3. Event Structures
+- `SubscriptionUpdatedEvent`: Represents subscription updates from Billing App
+  - `UserID`: The principal ID to update
+  - `Plan`: The subscription plan (e.g., "pro", "enterprise")
+  - `Attributes`: Additional subscription attributes
+- `UsageUpdatedEvent`: Represents usage updates from Business App
+  - `UserID`: The principal ID to update
+  - `Attributes`: Usage metrics (e.g., `current_users: 28`)
+
+#### 4. Consume Method
+- Accepts `core.PolicyEngine` interface as parameter
+- Validates PolicyEngine is not nil
+- Subscribes to two JetStream subjects:
+  1. `subscription.updated`: Handles subscription/plan changes
+  2. `usage.updated`: Handles usage metric updates
+- For each subscription:
+  - Parses incoming JSON message into appropriate event struct
+  - Extracts user_id and attributes from the event
+  - Calls `pdp.UpdateAttributes(ctx, userID, attributes)` to update AuthZ engine
+  - Acknowledges message after successful processing
+  - Logs errors but acknowledges malformed messages to prevent redelivery
+  - Does not acknowledge on UpdateAttributes failure to allow retry
+- Blocks forever using `select {}` to keep subscriptions active
+- Logs informational messages for successful processing
+
+#### 5. Subscription Event Processing
+- Merges plan field into attributes map if present
+- Includes any additional attributes from the event
+- Example: `{"user_id": "user123", "plan": "pro"}` → Updates attributes with `{"plan": "pro"}`
+
+#### 6. Usage Event Processing
+- Directly uses the attributes map from the event
+- Example: `{"user_id": "user123", "attributes": {"current_users": 28}}` → Updates attributes with `{"current_users": 28}`
+
+#### 7. Error Handling
+- Comprehensive error handling with descriptive messages
+- Logs parse errors but acknowledges message (prevents infinite retry on bad data)
+- Does not acknowledge UpdateAttributes errors (allows retry by NATS)
+- Connection errors are properly propagated up
+- Close method safely handles nil connections
+
+#### 8. Close Method
+- Provides graceful cleanup of NATS connection
+- Safe to call even with nil connection
+
+### Dependencies Added:
+- `github.com/nats-io/nats.go@v1.47.0` - NATS Go client with JetStream support
+- `github.com/nats-io/nkeys@v0.4.11` - NATS key support (transitive)
+- `github.com/nats-io/nuid@v1.0.1` - NATS unique identifiers (transitive)
+- `github.com/klauspost/compress@v1.18.0` - Compression support (transitive)
+
+### Test Coverage:
+
+#### Unit Tests Created:
+1. **TestNewNATSConsumer**: Tests constructor
+   - Empty NATS URL (error case)
+   - Invalid NATS URL (connection error)
+
+2. **TestSubscriptionUpdatedEvent_Unmarshal**: Tests JSON unmarshaling
+   - Valid event with plan
+   - Valid event with plan and attributes
+   - Invalid JSON
+   - Minimal valid event
+
+3. **TestUsageUpdatedEvent_Unmarshal**: Tests JSON unmarshaling
+   - Valid event with current_users
+   - Valid event with multiple attributes
+   - Invalid JSON
+   - Empty attributes
+
+4. **TestConsume_NilPolicyEngine**: Tests validation
+   - Verifies error when PolicyEngine is nil
+
+5. **TestConsume_Integration**: Integration test (skipped without NATS)
+   - Placeholder for full end-to-end testing with real NATS
+
+6. **TestEventProcessing_SubscriptionUpdated**: Tests subscription event logic
+   - Subscription with plan only
+   - Subscription with plan and attributes
+   - Subscription without plan
+   - Verifies UpdateAttributes is called with correct parameters
+
+7. **TestEventProcessing_UsageUpdated**: Tests usage event logic
+   - Usage with current_users
+   - Usage with multiple attributes
+   - Verifies UpdateAttributes is called with correct parameters
+
+8. **TestConsumerClose**: Tests cleanup
+   - Verifies Close doesn't panic with nil connection
+
+9. **TestAttributesMerging**: Tests attribute merging logic
+   - Verifies plan and additional attributes merge correctly
+
+10. **TestEmptyPlan**: Tests handling of events without plan field
+    - Verifies plan is not added to attributes if empty
+
+11. **TestConcurrentEventProcessing**: Tests concurrent processing
+    - Simulates multiple concurrent UpdateAttributes calls
+    - Verifies thread-safe behavior
+
+#### Test Results:
+- All tests pass ✅
+- 11 test cases with 28 subtests
+- Comprehensive coverage of event parsing and processing logic
+- Mock-based tests verify UpdateAttributes calls
+- No linting issues ✅
+- Builds successfully ✅
+
+### Example Event Formats:
+
+#### Subscription Updated Event:
+```json
+{
+  "user_id": "user123",
+  "plan": "pro",
+  "attributes": {
+    "max_users": 50,
+    "features": ["sso", "audit"]
+  }
+}
+```
+
+#### Usage Updated Event:
+```json
+{
+  "user_id": "user123",
+  "attributes": {
+    "current_users": 28,
+    "storage_used_gb": 120.5,
+    "api_calls_today": 1500
+  }
+}
+```
+
+### Key Design Decisions:
+
+1. **Event-Driven Architecture**: Uses NATS JetStream for reliable, asynchronous message delivery following the project's event-driven philosophy
+
+2. **Decoupled Design**: Works against the `core.PolicyEngine` interface, not specific implementations
+
+3. **Context-aware**: Uses `context.Background()` for UpdateAttributes calls (could be enhanced with cancellation context)
+
+4. **Error Handling Strategy**:
+   - Parse errors: Acknowledge message to prevent redelivery (bad data won't be fixed by retry)
+   - UpdateAttributes errors: Don't acknowledge, allow NATS to retry
+
+5. **Attribute Merging**: Subscription events merge plan into attributes map for flexible attribute management
+
+6. **Logging**: Comprehensive logging for observability in production
+
+7. **Blocking Consumer**: Uses `select {}` to keep subscriptions active indefinitely (production would use context for graceful shutdown)
+
+8. **JetStream**: Uses JetStream for durable, reliable subscriptions (vs core NATS for at-most-once delivery)
+
+9. **Testability**: Mock-based tests verify the event processing logic without requiring a running NATS server
+
+10. **Comments**: Added detailed comments for quick developer reference as per project guidelines
+
+### Notes:
+- The implementation follows the project's "Orchestrate, Don't Create" philosophy by wrapping NATS JetStream
+- The code is written against the `core.EventConsumer` interface as required
+- This enables asynchronous, non-blocking synchronization of external state (subscriptions, usage) into the AuthZ engine
+- The consumer is designed to run as a long-lived background service
+- In production, a context should be passed to Consume for graceful shutdown
+- JetStream provides at-least-once delivery with acknowledgment support
+- The implementation meets all requirements from the issue including parsing events and calling UpdateAttributes
+
