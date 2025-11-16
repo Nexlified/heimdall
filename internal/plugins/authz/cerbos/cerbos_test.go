@@ -1,0 +1,326 @@
+package cerbos
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestNewCerbosClient tests the constructor with various configurations
+func TestNewCerbosClient(t *testing.T) {
+	tests := []struct {
+		name        string
+		grpcURL     string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "valid gRPC URL",
+			grpcURL:     "localhost:3593",
+			expectError: false,
+		},
+		{
+			name:        "empty gRPC URL",
+			grpcURL:     "",
+			expectError: true,
+			errorMsg:    "grpcURL is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewCerbosClient(tt.grpcURL)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, client)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, client)
+				assert.NotNil(t, client.cerbosClient)
+			}
+		})
+	}
+}
+
+// TestCheckRequest_Unmarshal tests unmarshaling of various JSON structures
+func TestCheckRequest_Unmarshal(t *testing.T) {
+	tests := []struct {
+		name        string
+		jsonData    string
+		expectError bool
+		validate    func(t *testing.T, req *CheckRequest)
+	}{
+		{
+			name: "valid request with single resource",
+			jsonData: `{
+				"principal": {
+					"id": "user123",
+					"roles": ["user", "viewer"],
+					"attr": {
+						"department": "engineering"
+					}
+				},
+				"resources": [
+					{
+						"kind": "document",
+						"id": "doc123",
+						"actions": ["view", "edit"],
+						"attr": {
+							"owner": "user123"
+						}
+					}
+				]
+			}`,
+			expectError: false,
+			validate: func(t *testing.T, req *CheckRequest) {
+				assert.Equal(t, "user123", req.Principal.ID)
+				assert.Equal(t, []string{"user", "viewer"}, req.Principal.Roles)
+				assert.Equal(t, "engineering", req.Principal.Attributes["department"])
+				assert.Len(t, req.Resources, 1)
+				assert.Equal(t, "document", req.Resources[0].Kind)
+				assert.Equal(t, "doc123", req.Resources[0].ID)
+				assert.Equal(t, []string{"view", "edit"}, req.Resources[0].Actions)
+			},
+		},
+		{
+			name: "valid request with multiple resources",
+			jsonData: `{
+				"principal": {
+					"id": "user456",
+					"roles": ["admin"]
+				},
+				"resources": [
+					{
+						"kind": "project",
+						"id": "proj1",
+						"actions": ["delete"]
+					},
+					{
+						"kind": "project",
+						"id": "proj2",
+						"actions": ["view"]
+					}
+				]
+			}`,
+			expectError: false,
+			validate: func(t *testing.T, req *CheckRequest) {
+				assert.Equal(t, "user456", req.Principal.ID)
+				assert.Len(t, req.Resources, 2)
+			},
+		},
+		{
+			name:        "invalid JSON",
+			jsonData:    `{"invalid": json}`,
+			expectError: true,
+		},
+		{
+			name:        "empty JSON",
+			jsonData:    `{}`,
+			expectError: false,
+			validate: func(t *testing.T, req *CheckRequest) {
+				assert.Nil(t, req.Principal)
+				assert.Nil(t, req.Resources)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req CheckRequest
+			err := json.Unmarshal([]byte(tt.jsonData), &req)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, &req)
+				}
+			}
+		})
+	}
+}
+
+// TestCheck_Validation tests the validation logic in the Check method
+func TestCheck_Validation(t *testing.T) {
+	// Create a client (will fail to connect but we just need it for validation tests)
+	client, err := NewCerbosClient("localhost:9999")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		requestJSON string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "empty request",
+			requestJSON: "",
+			expectError: true,
+			errorMsg:    "checkRequest cannot be empty",
+		},
+		{
+			name:        "invalid JSON",
+			requestJSON: `{"invalid": json}`,
+			expectError: true,
+			errorMsg:    "failed to unmarshal check request",
+		},
+		{
+			name: "missing principal",
+			requestJSON: `{
+				"resources": [
+					{
+						"kind": "document",
+						"id": "doc123",
+						"actions": ["view"]
+					}
+				]
+			}`,
+			expectError: true,
+			errorMsg:    "principal is required",
+		},
+		{
+			name: "missing resources",
+			requestJSON: `{
+				"principal": {
+					"id": "user123",
+					"roles": ["user"]
+				},
+				"resources": []
+			}`,
+			expectError: true,
+			errorMsg:    "at least one resource is required",
+		},
+		{
+			name: "no resources field",
+			requestJSON: `{
+				"principal": {
+					"id": "user123",
+					"roles": ["user"]
+				}
+			}`,
+			expectError: true,
+			errorMsg:    "at least one resource is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			resp, err := client.Check(ctx, []byte(tt.requestJSON))
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, resp)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				// Note: Will likely fail with connection error in unit test environment
+				// but we're testing validation, not actual Cerbos connection
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestCheck_Integration tests the Check method with a valid request structure
+// Note: This test validates the request/response flow but will fail without a running Cerbos instance
+func TestCheck_Integration(t *testing.T) {
+	t.Skip("Skipping integration test - requires running Cerbos instance")
+
+	client, err := NewCerbosClient("localhost:3593")
+	require.NoError(t, err)
+
+	requestJSON := `{
+		"principal": {
+			"id": "user123",
+			"roles": ["user"],
+			"attr": {
+				"department": "engineering"
+			}
+		},
+		"resources": [
+			{
+				"kind": "document",
+				"id": "doc123",
+				"actions": ["view", "edit"],
+				"attr": {
+					"owner": "user123"
+				}
+			}
+		]
+	}`
+
+	ctx := context.Background()
+	resp, err := client.Check(ctx, []byte(requestJSON))
+
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	// Validate that response is valid JSON
+	var responseMap map[string]interface{}
+	err = json.Unmarshal(resp, &responseMap)
+	assert.NoError(t, err)
+}
+
+// TestPlanResources tests the stub implementation
+func TestPlanResources(t *testing.T) {
+	client, err := NewCerbosClient("localhost:9999")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	resp, err := client.PlanResources(ctx, []byte(`{}`))
+
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Contains(t, err.Error(), "not implemented yet")
+}
+
+// TestUpdateAttributes tests the stub implementation
+func TestUpdateAttributes(t *testing.T) {
+	client, err := NewCerbosClient("localhost:9999")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	attributes := map[string]any{
+		"department": "engineering",
+	}
+	err = client.UpdateAttributes(ctx, "user123", attributes)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not implemented yet")
+}
+
+// TestCheckRequest_WithScope tests requests with scope
+func TestCheckRequest_WithScope(t *testing.T) {
+	requestJSON := `{
+		"principal": {
+			"id": "user123",
+			"roles": ["user"],
+			"scope": "tenant:acme"
+		},
+		"resources": [
+			{
+				"kind": "document",
+				"id": "doc123",
+				"actions": ["view"],
+				"scope": "tenant:acme"
+			}
+		]
+	}`
+
+	var req CheckRequest
+	err := json.Unmarshal([]byte(requestJSON), &req)
+	require.NoError(t, err)
+
+	assert.Equal(t, "tenant:acme", req.Principal.Scope)
+	assert.Equal(t, "tenant:acme", req.Resources[0].Scope)
+}

@@ -141,3 +141,156 @@ This file tracks the implementations completed by GitHub Copilot for the Heimdal
 - The implementation follows the project's "Orchestrate, Don't Create" philosophy by wrapping Ory Kratos and Hydra
 - The code is written against the `core.IdentityProvider` interface as required
 - The implementation is decoupled and can be easily swapped with other identity providers
+
+## Issue #3: Implement PolicyEngine 'Check' method for Cerbos
+
+**Date**: 2025-11-16
+
+**Summary**: Implemented the `Check` method of the `core.PolicyEngine` interface using the Cerbos Go SDK.
+
+### Files Created:
+- `internal/plugins/authz/cerbos/cerbos.go` - Main Cerbos plugin implementation
+- `internal/plugins/authz/cerbos/cerbos_test.go` - Comprehensive unit tests
+- `internal/handlers/http_test.go` - Handler tests including Check endpoint tests
+
+### Files Modified:
+- `internal/handlers/http.go` - Updated HandleCheck to analyze Cerbos response and return appropriate status codes
+
+### Implementation Details:
+
+#### 1. Client Structure
+- Created `Client` struct that holds:
+  - Cerbos gRPC client (`cerbosClient`)
+
+#### 2. NewCerbosClient Constructor
+- Accepts a `grpcURL` string parameter
+- Validates the grpcURL is not empty
+- Initializes Cerbos gRPC client with plaintext connection
+- Returns error if client creation fails
+
+#### 3. Check Method
+- Accepts `context.Context` and raw JSON bytes as parameters
+- Unmarshals JSON into internal `CheckRequest` structure with:
+  - `Principal`: Contains ID, roles, attributes, and optional scope
+  - `Resources`: Array of resources with kind, ID, attributes, actions, and optional scope
+- Validates request structure (principal and resources required)
+- Builds Cerbos SDK Principal with:
+  - Principal ID and roles
+  - Optional attributes map
+  - Optional scope
+- Builds Cerbos SDK ResourceBatch with:
+  - Resources with kind and ID
+  - Optional resource attributes
+  - Optional resource scope
+  - Actions to check for each resource
+- Calls `cerbosClient.CheckResources(ctx, principal, resourceBatch)`
+- Marshals the Cerbos `CheckResourcesResponse` back to JSON
+- Returns the marshaled JSON response
+
+#### 4. Request/Response Structures
+- `CheckRequest`: Top-level request structure
+- `PrincipalData`: Represents the principal (user) making the request
+- `ResourceEntry`: Represents a resource to be checked with its actions
+
+#### 5. Stub Implementations
+- `PlanResources`: Returns "not implemented yet" error
+- `UpdateAttributes`: Returns "not implemented yet" error
+
+#### 6. Handler Updates (HandleCheck)
+- Added `analyzeCheckResponse` function that:
+  - Unmarshals Cerbos CheckResourcesResponse from JSON
+  - Iterates through all results and their actions
+  - Returns `http.StatusForbidden` (403) if any action has `EFFECT_DENY`
+  - Returns `http.StatusOK` (200) if all actions are `EFFECT_ALLOW` or no results
+- Updated `HandleCheck` to:
+  - Call the new `analyzeCheckResponse` function
+  - Return appropriate HTTP status code based on authorization decision
+  - Still return the full Cerbos response as JSON in the body
+
+### Dependencies Added:
+- `github.com/cerbos/cerbos-sdk-go@v0.3.13` - Cerbos Go SDK
+- All transitive dependencies (gRPC, protobuf, etc.)
+
+### Test Coverage:
+
+#### Cerbos Plugin Unit Tests:
+1. **TestNewCerbosClient**: Tests constructor
+   - Valid gRPC URL
+   - Empty gRPC URL (error case)
+
+2. **TestCheckRequest_Unmarshal**: Tests JSON unmarshaling
+   - Valid request with single resource
+   - Valid request with multiple resources
+   - Invalid JSON
+   - Empty JSON
+
+3. **TestCheck_Validation**: Tests validation logic
+   - Empty request
+   - Invalid JSON
+   - Missing principal
+   - Missing resources
+   - No resources field
+
+4. **TestCheck_Integration**: Integration test (skipped without running Cerbos)
+   - Tests full request/response flow
+
+5. **TestPlanResources**: Tests stub implementation
+
+6. **TestUpdateAttributes**: Tests stub implementation
+
+7. **TestCheckRequest_WithScope**: Tests requests with scope
+
+#### Handler Tests:
+1. **TestHandleCheck_NoPolicyEngine**: Tests error when no policy engine configured
+
+2. **TestHandleCheck_AllowResponse**: Tests that `EFFECT_ALLOW` returns 200 OK
+   - Creates mock Cerbos response with all actions allowed
+   - Verifies 200 OK status code
+   - Verifies response is valid JSON
+
+3. **TestHandleCheck_DenyResponse**: Tests that `EFFECT_DENY` returns 403 Forbidden
+   - Creates mock Cerbos response with at least one action denied
+   - Verifies 403 Forbidden status code
+
+4. **TestHandleCheck_MixedResponse**: Tests that any deny causes 403
+   - Multiple resources with mixed allow/deny
+   - Verifies 403 Forbidden status code
+
+5. **TestHandleCheck_EmptyResults**: Tests empty results return 200 OK
+
+6. **TestAnalyzeCheckResponse**: Tests the analyze function directly
+   - All allow scenario
+   - Single deny scenario
+   - Mixed effects scenario
+   - Empty results scenario
+
+### Key Design Decisions:
+
+1. **Context-aware**: All methods accept `context.Context` as required by project guidelines
+
+2. **JSON-based Interface**: The Check method accepts and returns raw JSON bytes, allowing the handler to remain decoupled from Cerbos-specific types
+
+3. **Effect-based Authorization**: Handler returns 403 if ANY action has EFFECT_DENY, ensuring secure-by-default behavior
+
+4. **Comprehensive Validation**: Request validation ensures required fields are present before calling Cerbos
+
+5. **Scope Support**: Full support for principal and resource scopes (multi-tenancy)
+
+6. **Error Handling**: Comprehensive error handling with descriptive messages
+
+7. **Testability**: Mock-friendly design with clear separation of concerns
+
+8. **Comments**: Added detailed comments for quick developer reference
+
+### Test Results:
+- All tests pass ✅
+- No linting issues ✅
+- No `go vet` warnings ✅
+- Builds successfully ✅
+
+### Notes:
+- The implementation follows the project's "Orchestrate, Don't Create" philosophy by wrapping Cerbos SDK
+- The code is written against the `core.PolicyEngine` interface as required
+- The implementation supports multi-tenancy through scopes
+- The handler implementation meets the requirement to return 200 OK for allow and 403 Forbidden for deny
+- PlanResources and UpdateAttributes are stubs for future implementation
