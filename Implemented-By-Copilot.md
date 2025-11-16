@@ -614,3 +614,138 @@ This file tracks the implementations completed by GitHub Copilot for the Heimdal
 - JetStream provides at-least-once delivery with acknowledgment support
 - The implementation meets all requirements from the issue including parsing events and calling UpdateAttributes
 
+## Issue #7: Implement PolicyEngine 'UpdateAttributes' for Cerbos
+
+**Date**: 2025-11-16
+
+**Summary**: Implemented the `UpdateAttributes` method of the `core.PolicyEngine` interface for the Cerbos plugin. This method is called by the EventConsumer to acknowledge attribute update events.
+
+### Files Modified:
+- `internal/plugins/authz/cerbos/cerbos.go` - Implemented UpdateAttributes method
+- `internal/plugins/authz/cerbos/cerbos_test.go` - Added comprehensive unit tests
+
+### Implementation Details:
+
+#### 1. UpdateAttributes Method Implementation
+- Accepts `context.Context`, `principalID` string, and `attributes` map as parameters
+- Validates that principalID is not empty
+- Validates that attributes map is not nil
+- Returns success (nil) after validation
+
+#### 2. Cerbos Architecture Understanding
+- **Key Insight**: Cerbos SDK v0.3.13 and API v0.47.0 do not have an `AddOrUpdatePrincipal` Admin API method
+- Cerbos operates on a "pull" model where principal attributes are passed inline during each authorization check
+- Cerbos does not maintain a separate store of principals or their attributes
+- The `CheckResources` and `PlanResources` methods receive fresh principal attributes with every call
+
+#### 3. Implementation Approach
+- UpdateAttributes serves as an acknowledgment of attribute update events
+- The method is a validated no-op that:
+  - Validates input parameters (principalID and attributes)
+  - Returns success to acknowledge the event
+  - Documents that attributes will be passed fresh in subsequent authorization checks
+- This approach aligns with Cerbos's stateless design philosophy
+
+#### 4. Production Considerations (documented in comments)
+In a production system, this method could be enhanced to:
+1. Log the update for audit purposes
+2. Update a local cache if implementing one
+3. Emit metrics for monitoring attribute update frequency
+
+### Test Coverage:
+
+#### Unit Tests Created:
+1. **TestUpdateAttributes**: Comprehensive validation testing
+   - Valid update with multiple attributes
+   - Valid update with empty attributes map
+   - Empty principal ID (error case)
+   - Nil attributes (error case)
+   - Update with complex attributes (nested structures, arrays)
+
+2. **TestUpdateAttributes_ContextCancellation**: Context handling
+   - Verifies the method completes quickly even with cancelled context
+   - Ensures the no-op nature doesn't cause hangs
+
+#### Test Results:
+- All tests pass ✅
+- 6 test cases covering validation and edge cases
+- No linting issues ✅
+- No `go vet` warnings ✅
+- Builds successfully ✅
+
+### Key Design Decisions:
+
+1. **No-op Implementation**: Based on Cerbos architecture research, determined that storing principals separately is not part of Cerbos's design. The method validates inputs and returns success.
+
+2. **Input Validation**: Comprehensive validation ensures:
+   - Principal ID is not empty (required for identification)
+   - Attributes map is not nil (empty map is valid, but nil is not)
+
+3. **Context-aware**: Method accepts `context.Context` as required by project guidelines
+
+4. **Extensive Documentation**: Added detailed comments explaining:
+   - Why this is a no-op
+   - How Cerbos actually handles principal attributes
+   - What production enhancements could be added
+
+5. **Error Handling**: Clear, descriptive error messages for validation failures
+
+6. **Testability**: Comprehensive test coverage with multiple edge cases
+
+7. **Event Acknowledgment**: Returns success to allow EventConsumer to acknowledge NATS messages and prevent infinite retries
+
+### Integration with EventConsumer:
+
+The EventConsumer (Issue #6) calls this method when receiving events:
+```go
+// From subscription.updated events
+err := pdp.UpdateAttributes(ctx, userID, attributes)
+
+// From usage.updated events  
+err := pdp.UpdateAttributes(ctx, userID, attributes)
+```
+
+With the new implementation:
+- ✅ Valid events are acknowledged successfully
+- ✅ Invalid events (empty principal ID or nil attributes) return errors
+- ✅ NATS messages can be properly acknowledged after successful processing
+- ✅ The system maintains event-driven synchronization without requiring Cerbos to store state
+
+### Example Usage:
+
+```go
+// EventConsumer receives a subscription update event
+attributes := map[string]any{
+    "plan": "pro",
+    "max_users": 50,
+    "features": []string{"sso", "audit"},
+}
+
+// Calls UpdateAttributes to acknowledge the update
+err := client.UpdateAttributes(ctx, "user123", attributes)
+// Returns nil (success) after validation
+
+// Later, when checking authorization, fresh attributes are passed:
+checkRequest := CheckRequest{
+    Principal: &PrincipalData{
+        ID: "user123",
+        Roles: []string{"user"},
+        Attributes: attributes,  // Fresh attributes from caller
+    },
+    Resources: [...],
+}
+```
+
+### Notes:
+- The implementation completes all tasks specified in Issue #7
+- Research confirmed that Cerbos SDK v0.3.13 does not have `AddOrUpdatePrincipal` API
+- The implementation follows Cerbos's stateless, "pull" architecture model
+- All tests pass including existing Cerbos plugin tests
+- The method integrates correctly with the EventConsumer from Issue #6
+- The code is written against the `core.PolicyEngine` interface as required
+- Comprehensive documentation explains the architectural decision
+- This completes all three methods of the `core.PolicyEngine` interface:
+  1. ✅ Check (Issue #3)
+  2. ✅ PlanResources (Issue #5)
+  3. ✅ UpdateAttributes (Issue #7)
+

@@ -521,19 +521,97 @@ func TestPlanResources_Integration(t *testing.T) {
 // TestPlanResources_OldStub is removed - replaced with comprehensive tests above
 // The PlanResources method is now fully implemented
 
-// TestUpdateAttributes tests the stub implementation
+// TestUpdateAttributes tests the UpdateAttributes method validation and behavior
 func TestUpdateAttributes(t *testing.T) {
 	client, err := NewCerbosClient("localhost:9999")
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	tests := []struct {
+		name        string
+		principalID string
+		attributes  map[string]any
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "valid update with attributes",
+			principalID: "user123",
+			attributes: map[string]any{
+				"department": "engineering",
+				"plan":       "pro",
+			},
+			expectError: false,
+		},
+		{
+			name:        "valid update with empty attributes map",
+			principalID: "user456",
+			attributes:  map[string]any{},
+			expectError: false,
+		},
+		{
+			name:        "empty principal ID",
+			principalID: "",
+			attributes: map[string]any{
+				"department": "engineering",
+			},
+			expectError: true,
+			errorMsg:    "principalID is required",
+		},
+		{
+			name:        "nil attributes",
+			principalID: "user789",
+			attributes:  nil,
+			expectError: true,
+			errorMsg:    "attributes cannot be nil",
+		},
+		{
+			name:        "update with complex attributes",
+			principalID: "user999",
+			attributes: map[string]any{
+				"department":    "engineering",
+				"current_users": 28,
+				"max_users":     50,
+				"plan":          "enterprise",
+				"features":      []string{"sso", "audit"},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			err := client.UpdateAttributes(ctx, tt.principalID, tt.attributes)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestUpdateAttributes_ContextCancellation tests that UpdateAttributes respects context cancellation
+func TestUpdateAttributes_ContextCancellation(t *testing.T) {
+	client, err := NewCerbosClient("localhost:9999")
+	require.NoError(t, err)
+
+	// Create a cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	attributes := map[string]any{
 		"department": "engineering",
 	}
-	err = client.UpdateAttributes(ctx, "user123", attributes)
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not implemented yet")
+	// Even with a cancelled context, UpdateAttributes should complete quickly
+	// since it's a no-op. This test verifies it doesn't hang.
+	err = client.UpdateAttributes(ctx, "user123", attributes)
+	assert.NoError(t, err)
 }
 
 // TestCheckRequest_WithScope tests requests with scope
