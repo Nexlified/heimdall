@@ -1,0 +1,10 @@
+# A simple policy file to prove Cerbos is working
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "hello"
+  rules:
+    - actions: ["world"]
+      effect: EFFECT_ALLOW
+      roles:
+        - "user"
