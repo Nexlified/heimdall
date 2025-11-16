@@ -7,19 +7,18 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/your-org/heimdall/internal/core"
-	"github.com/your-org/heimdall/internal/handlers"
-	
+	"github.com/nexlified/heimdall/internal/core"
+	"github.com/nexlified/heimdall/internal/handlers"
 	// TODO: Import real plugin implementations once created
-	// "github.com/your-org/heimdall/internal/plugins/authn/kratos"
-	// "github.com/your-org/heimdall/internal/plugins/authz/cerbos"
-	// "github.com/your-org/heimdall/internal/plugins/events/nats"
+	// "github.com/nexlified/heimdall/internal/plugins/authn/kratos"
+	// "github.com/nexlified/heimdall/internal/plugins/authz/cerbos"
+	// "github.com/nexlified/heimdall/internal/plugins/events/nats"
 )
 
 func main() {
 	// --- Configuration ---
 	// In a real app, load this from env vars or a config file
-	natsURL := os.Getenv("NATS_URL")
+	_ = os.Getenv("NATS_URL") // natsURL - will be used when EventConsumer is implemented
 	//... other config (Kratos URL, Cerbos URL, PASETO Key)
 
 	// --- Pluggable Dependencies ---
@@ -44,17 +43,16 @@ func main() {
 	// --- Event Consumer ---
 	// Start the event consumer in a separate goroutine
 	// It needs a reference to the PolicyEngine to update attributes
-	if consumer!= nil {
+	if consumer != nil {
 		go func() {
 			log.Println("Starting event consumer...")
-			if err := consumer.Consume(pdp); err!= nil {
+			if err := consumer.Consume(pdp); err != nil {
 				log.Fatalf("Event consumer failed: %v", err)
 			}
 		}()
 	} else {
 		log.Println(" EventConsumer is nil. No events will be processed.")
 	}
-
 
 	// --- HTTP Server & Routes ---
 	r := chi.NewRouter()
@@ -69,7 +67,7 @@ func main() {
 		r.Get("/login", h.HandleLogin)
 		r.Get("/callback", h.HandleAuthCallback)
 		r.Post("/refresh", h.HandleRefreshToken)
-	});
+	})
 
 	// --- API Gateway / PEP Routes ---
 	// These endpoints are called by the API Gateway to make auth decisions
@@ -79,7 +77,7 @@ func main() {
 	// TODO: Add a /consent route for Ory Hydra
 
 	log.Println("Starting Heimdall server on :8080")
-	if err := http.ListenAndServe(":8080", r); err!= nil {
+	if err := http.ListenAndServe(":8080", r); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

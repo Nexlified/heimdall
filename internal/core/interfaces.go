@@ -24,11 +24,11 @@ type TokenResponse struct {
 type IdentityProvider interface {
 	// InitiateLogin begins the OIDC/SSO login flow, redirecting the user.
 	InitiateLogin(w http.ResponseWriter, r *http.Request)
-	
+
 	// HandleAuthCallback processes the OIDC callback, exchanges the code for
 	// internal tokens, and mints a new Heimdall PASETO token.
 	HandleAuthCallback(r *http.Request) (*TokenResponse, error)
-	
+
 	// RefreshToken exchanges a Heimdall refresh token for a new access token.
 	RefreshToken(refreshToken string) (*TokenResponse, error)
 }
@@ -38,12 +38,12 @@ type IdentityProvider interface {
 type PolicyEngine interface {
 	// Check performs a simple "allow/deny" check for a request.
 	// The request payload should be the raw bytes of the Cerbos CheckResource API.
-	Check(ctx context.Context, checkRequestbyte) (byte, error)
-	
+	Check(ctx context.Context, checkRequest []byte) ([]byte, error)
+
 	// PlanResources returns a query plan for list filtering (The "N+1" solution).
 	// The request payload is the raw Cerbos PlanResources API.
-	PlanResources(ctx context.Context, planRequestbyte) (byte, error)
-	
+	PlanResources(ctx context.Context, planRequest []byte) ([]byte, error)
+
 	// UpdateAttributes updates the attributes for a principal (e.g., from an event).
 	// This is called by the EventConsumer.
 	UpdateAttributes(ctx context.Context, principalID string, attributes map[string]any) error
