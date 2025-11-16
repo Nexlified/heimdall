@@ -271,18 +271,255 @@ func TestCheck_Integration(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestPlanResources tests the stub implementation
-func TestPlanResources(t *testing.T) {
+// TestPlanResources_Validation tests the validation logic in the PlanResources method
+func TestPlanResources_Validation(t *testing.T) {
+	// Create a client (will fail to connect but we just need it for validation tests)
 	client, err := NewCerbosClient("localhost:9999")
 	require.NoError(t, err)
 
-	ctx := context.Background()
-	resp, err := client.PlanResources(ctx, []byte(`{}`))
+	tests := []struct {
+		name        string
+		requestJSON string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "empty request",
+			requestJSON: "",
+			expectError: true,
+			errorMsg:    "planRequest cannot be empty",
+		},
+		{
+			name:        "invalid JSON",
+			requestJSON: `{"invalid": json}`,
+			expectError: true,
+			errorMsg:    "failed to unmarshal plan request",
+		},
+		{
+			name: "missing principal",
+			requestJSON: `{
+				"resource": {
+					"kind": "document"
+				},
+				"actions": ["view"]
+			}`,
+			expectError: true,
+			errorMsg:    "principal is required",
+		},
+		{
+			name: "missing resource",
+			requestJSON: `{
+				"principal": {
+					"id": "user123",
+					"roles": ["user"]
+				},
+				"actions": ["view"]
+			}`,
+			expectError: true,
+			errorMsg:    "resource is required",
+		},
+		{
+			name: "missing actions",
+			requestJSON: `{
+				"principal": {
+					"id": "user123",
+					"roles": ["user"]
+				},
+				"resource": {
+					"kind": "document"
+				},
+				"actions": []
+			}`,
+			expectError: true,
+			errorMsg:    "at least one action is required",
+		},
+		{
+			name: "no actions field",
+			requestJSON: `{
+				"principal": {
+					"id": "user123",
+					"roles": ["user"]
+				},
+				"resource": {
+					"kind": "document"
+				}
+			}`,
+			expectError: true,
+			errorMsg:    "at least one action is required",
+		},
+	}
 
-	assert.Error(t, err)
-	assert.Nil(t, resp)
-	assert.Contains(t, err.Error(), "not implemented yet")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			resp, err := client.PlanResources(ctx, []byte(tt.requestJSON))
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, resp)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				// Note: Will likely fail with connection error in unit test environment
+				// but we're testing validation, not actual Cerbos connection
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
+
+// TestPlanResourcesRequest_Unmarshal tests unmarshaling of various JSON structures
+func TestPlanResourcesRequest_Unmarshal(t *testing.T) {
+	tests := []struct {
+		name        string
+		jsonData    string
+		expectError bool
+		validate    func(t *testing.T, req *PlanResourcesRequest)
+	}{
+		{
+			name: "valid request with attributes",
+			jsonData: `{
+				"principal": {
+					"id": "user123",
+					"roles": ["user", "viewer"],
+					"attr": {
+						"department": "engineering"
+					}
+				},
+				"resource": {
+					"kind": "document",
+					"attr": {
+						"public": false
+					}
+				},
+				"actions": ["view", "edit"]
+			}`,
+			expectError: false,
+			validate: func(t *testing.T, req *PlanResourcesRequest) {
+				assert.Equal(t, "user123", req.Principal.ID)
+				assert.Equal(t, []string{"user", "viewer"}, req.Principal.Roles)
+				assert.Equal(t, "engineering", req.Principal.Attributes["department"])
+				assert.Equal(t, "document", req.Resource.Kind)
+				assert.Equal(t, false, req.Resource.Attributes["public"])
+				assert.Equal(t, []string{"view", "edit"}, req.Actions)
+			},
+		},
+		{
+			name: "valid request with scope",
+			jsonData: `{
+				"principal": {
+					"id": "user456",
+					"roles": ["admin"],
+					"scope": "tenant:acme"
+				},
+				"resource": {
+					"kind": "project",
+					"scope": "tenant:acme"
+				},
+				"actions": ["delete"]
+			}`,
+			expectError: false,
+			validate: func(t *testing.T, req *PlanResourcesRequest) {
+				assert.Equal(t, "user456", req.Principal.ID)
+				assert.Equal(t, "tenant:acme", req.Principal.Scope)
+				assert.Equal(t, "project", req.Resource.Kind)
+				assert.Equal(t, "tenant:acme", req.Resource.Scope)
+				assert.Equal(t, []string{"delete"}, req.Actions)
+			},
+		},
+		{
+			name: "minimal valid request",
+			jsonData: `{
+				"principal": {
+					"id": "user789",
+					"roles": ["user"]
+				},
+				"resource": {
+					"kind": "file"
+				},
+				"actions": ["read"]
+			}`,
+			expectError: false,
+			validate: func(t *testing.T, req *PlanResourcesRequest) {
+				assert.Equal(t, "user789", req.Principal.ID)
+				assert.Equal(t, "file", req.Resource.Kind)
+				assert.Equal(t, []string{"read"}, req.Actions)
+			},
+		},
+		{
+			name:        "invalid JSON",
+			jsonData:    `{"invalid": json}`,
+			expectError: true,
+		},
+		{
+			name:        "empty JSON",
+			jsonData:    `{}`,
+			expectError: false,
+			validate: func(t *testing.T, req *PlanResourcesRequest) {
+				assert.Nil(t, req.Principal)
+				assert.Nil(t, req.Resource)
+				assert.Nil(t, req.Actions)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req PlanResourcesRequest
+			err := json.Unmarshal([]byte(tt.jsonData), &req)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, &req)
+				}
+			}
+		})
+	}
+}
+
+// TestPlanResources_Integration tests the PlanResources method with a valid request structure
+// Note: This test validates the request/response flow but will fail without a running Cerbos instance
+func TestPlanResources_Integration(t *testing.T) {
+	t.Skip("Skipping integration test - requires running Cerbos instance")
+
+	client, err := NewCerbosClient("localhost:3593")
+	require.NoError(t, err)
+
+	requestJSON := `{
+		"principal": {
+			"id": "user123",
+			"roles": ["user"],
+			"attr": {
+				"department": "engineering"
+			}
+		},
+		"resource": {
+			"kind": "document",
+			"attr": {
+				"public": false
+			}
+		},
+		"actions": ["view", "edit"]
+	}`
+
+	ctx := context.Background()
+	resp, err := client.PlanResources(ctx, []byte(requestJSON))
+
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	// Validate that response is valid JSON
+	var responseMap map[string]interface{}
+	err = json.Unmarshal(resp, &responseMap)
+	assert.NoError(t, err)
+}
+
+// TestPlanResources_OldStub is removed - replaced with comprehensive tests above
+// The PlanResources method is now fully implemented
 
 // TestUpdateAttributes tests the stub implementation
 func TestUpdateAttributes(t *testing.T) {
