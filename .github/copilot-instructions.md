@@ -8,13 +8,13 @@ Your primary goal is to **write code that fulfills the GitHub Issues** while adh
 
 Heimdall's job is to be the "glue" that orchestrates best-in-class, cloud-native tools.
 
-- **We are Pluggable:** All code MUST be written against the interfaces defined in `/internal/core/interfaces.go`. 1 Never write code in a handler that directly imports a specific vendor SDK (like Kratos or Cerbos). Handlers call the `core.Application` interfaces. The _implementations_ of those interfaces live in `/internal/plugins/`.
+- **We are Pluggable:** All code MUST be written against the interfaces defined in `/internal/core/interfaces.go`. Never write code in a handler that directly imports a specific vendor SDK (like Kratos or Cerbos). Handlers call the `core.Application` interfaces. The _implementations_ of those interfaces live in `/internal/plugins/`.
     
-- **We are Decoupled:** Heimdall knows _nothing_ about business logic (like "projects" or "documents"). It only knows about "principals," "resources," and "attributes." 3
+- **We are Decoupled:** Heimdall knows _nothing_ about business logic (like "projects" or "documents"). It only knows about "principals," "resources," and "attributes."
     
-- **We are Event-Driven:** Heimdall _must not_ make synchronous, blocking calls to other services (like the Billing App) during an auth check. All external state (like a user's subscription plan) is synchronized _asynchronously_ via the `EventConsumer` (NATS). 5
+- **We are Event-Driven:** Heimdall _must not_ make synchronous, blocking calls to other services (like the Billing App) during an auth check. All external state (like a user's subscription plan) is synchronized _asynchronously_ via the `EventConsumer` (NATS).
     
-- **We are Secure by Default:** We use PASETO, not JWT, for all tokens we mint. 8
+- **We are Secure by Default:** We use PASETO, not JWT, for all tokens we mint.
     
 
 ## 2. The Canon Tech Stack
@@ -41,9 +41,13 @@ When implementing a feature, use these specific technologies.
         
     - **Always write code against the interfaces in `/internal/core/`.**
         
-    - Use standard Go concurrency patterns (goroutines, channels, `sync.WaitGroup`) where appropriate. 12
+    - Use standard Go concurrency patterns (goroutines, channels, `sync.WaitGroup`) where appropriate.
         
-    - **CRITICAL:** Every function that handles a request or could be long-running MUST accept `context.Context` as its first argument for cancellation and timeouts. 14
+    - **CRITICAL:** Every function that handles a request or could be long-running MUST accept `context.Context` as its first argument for cancellation and timeouts.
+    
+    - Include comments before implementation for quick reference for developers to understand the implementation, don't create unnecessary md files.
+    
+    - Update the implementation in common `Implemented-By-Copilot.md` file.
         
 4. **Write the Tests:**
     
