@@ -12,7 +12,9 @@ serve:
     base_url: http://kratos:4434/
 
 # Point to the database
-dsn: "postgres://kratos:secret-password@kratos-db:5432/kratos?sslmode=disable"
+# DSN is provided via environment variable in docker-compose.yml
+# This value is only used as a fallback if DSN env var is not set
+dsn: "postgres://kratos:changeme@kratos-db:5432/kratos?sslmode=disable"
 
 # Minimal required settings
 selfservice:
