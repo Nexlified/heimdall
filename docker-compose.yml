@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------
+  # Heimdall - The Core Auth Service
+  # ----------------------------------------
+  heimdall:
+    build:
+      context:.
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # These URLs are used by the Heimdall service to connect to its dependencies
+      # The hostnames match the service names defined below.
+      KRATOS_ADMIN_URL: "http://kratos:4434"
+      HYDRA_ADMIN_URL: "http://hydra:4445"
+      CERBOS_GRPC_URL: "cerbos:3592"
+      NATS_URL: "nats://nats:4222"
+    depends_on:
+      - kratos
+      - hydra
+      - cerbos
+      - nats
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # AuthN: Ory Kratos (Identity)
+  # ----------------------------------------
+  kratos-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: kratos
+      POSTGRES_PASSWORD: secret-password
+      POSTGRES_DB: kratos
+    ports:
+      - "5432:5432" # Expose for local debugging
+    volumes:
+      - kratos_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  kratos:
+    image: oryd/kratos:v1.1
+    ports:
+      - "4433:4433" # Public API
+      - "4434:4434" # Admin API
+    depends_on:
+      - kratos-db
+    environment:
+      DSN: "postgres://kratos:secret-password@kratos-db:5432/kratos?sslmode=disable&max_conns=20"
+      # We need to create these config files locally
+      KRATOS_CONFIG_PATH: "/etc/config/kratos/kratos.yml"
+    volumes:
+      # This local directory will need to be created
+      -./infra/kratos/:/etc/config/kratos/
+    command: "serve -c /etc/config/kratos/kratos.yml --dev --watch-courier"
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # AuthN: Ory Hydra (OAuth2/OIDC)
+  # ----------------------------------------
+  hydra:
+    image: oryd/hydra:v2.2
+    ports:
+      - "4444:4444" # Public API
+      - "4445:4445" # Admin API
+    depends_on:
+      - kratos
+    environment:
+      DSN: "memory" # Use "memory" for simple dev setup
+      URLS_SELF_ISSUER: "http://localhost:4444/"
+      URLS_LOGIN: "http://localhost:4433/self-service/login/browser" # Point to Kratos
+      URLS_CONSENT: "http://localhost:8080/consent" # Point to Heimdall (to be built)
+      SECRETS_SYSTEM: "you-must-change-this-in-prod"
+    command: "serve all --dangerous-force-http" # DO NOT use this flag in production
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # AuthZ: Cerbos (Authorization)
+  # ----------------------------------------
+  cerbos:
+    image: ghcr.io/cerbos/cerbos:0.35
+    ports:
+      - "3592:3592" # gRPC
+      - "3593:3593" # HTTP
+    volumes:
+      # This local directory will need to be created to hold policies
+      -./infra/cerbos/policies:/policies
+    command: "server --config=/policies/config.yaml"
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # Events: NATS (Event Bus)
+  # ----------------------------------------
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222" # Client port
+      - "8222:8222" # Monitoring port
+    # -js enables JetStream (persistence)
+    command: "-js -m 8222"
+    restart: unless-stopped
+
+# Define persistent volumes
+volumes:
+  kratos_data:
