@@ -614,7 +614,167 @@ This file tracks the implementations completed by GitHub Copilot for the Heimdal
 - JetStream provides at-least-once delivery with acknowledgment support
 - The implementation meets all requirements from the issue including parsing events and calling UpdateAttributes
 
-## Issue #7: Implement PolicyEngine 'UpdateAttributes' for Cerbos
+## Issue #17: Fix docker-compose file
+
+**Date**: 2025-11-16
+
+**Summary**: Fixed formatting issues in docker-compose.yml and implemented environment variables for all passwords, secrets, and keys used in the project.
+
+### Files Created:
+- `.env.example` - Template file with all required and optional environment variables
+
+### Files Modified:
+- `docker-compose.yml` - Fixed YAML formatting and replaced hardcoded secrets with environment variables
+- `infra/kratos/kratos.yml` - Updated DSN with placeholder and clarified environment variable usage
+- `README.md` - Added comprehensive documentation for environment variable configuration
+
+### Implementation Details:
+
+#### 1. YAML Formatting Fixes in docker-compose.yml
+- Fixed missing spaces after `-` in volume declarations:
+  - Line 35: `- ./infra/kratos/:/etc/config/kratos/` (was `-./infra/kratos/:/etc/config/kratos/`)
+  - Line 66: `- ./infra/cerbos/policies:/policies` (was `-./infra/cerbos/policies:/policies`)
+- Fixed missing space after `:` in build context:
+  - Line 73: `context: .` (was `context:.`)
+- Fixed inline comment spacing (added proper 2-space separation):
+  - All port mappings now have `  # Comment` format
+  - All inline comments throughout the file properly spaced
+- Used YAML multiline syntax (`>-`) to handle long lines:
+  - Kratos COURIER_SMTP_CONNECTION_URI (lines 33-34)
+  - Kratos command (lines 37-38)
+  - Hydra OIDC_SUBJECT_IDENTIFIERS_PAIRWISE_SALT (lines 50-51)
+  - Hydra URLS_LOGIN and URLS_CONSENT (lines 54, 56)
+  - Cerbos command (lines 67-69)
+  - Heimdall PASETO_SYMMETRIC_KEY (lines 88-89)
+- Moved inline comments to separate lines where appropriate for better readability
+
+#### 2. Environment Variables Implementation
+
+##### Required Environment Variables (enforced with `${VAR:?error message}`):
+- `POSTGRES_PASSWORD`: PostgreSQL database password for Kratos
+- `KRATOS_DSN`: Complete Kratos database connection string with password
+- `HYDRA_OIDC_SALT`: Hydra OIDC pairwise salt for subject identifier generation
+- `HYDRA_SECRETS_SYSTEM`: Hydra system secrets for encryption
+- `PASETO_SYMMETRIC_KEY`: PASETO symmetric key (must be exactly 32 bytes)
+
+##### Optional Environment Variables (with defaults using `${VAR:-default}`):
+- `POSTGRES_USER`: PostgreSQL username (default: kratos)
+- `POSTGRES_DB`: PostgreSQL database name (default: kratos)
+- `HYDRA_DSN`: Hydra database connection (default: memory)
+- `NATS_URL`: NATS connection URL (default: nats://nats:4222)
+- `KRATOS_ADMIN_URL`: Kratos admin API URL (default: http://kratos:4434)
+- `HYDRA_ADMIN_URL`: Hydra admin API URL (default: http://hydra:4445)
+- `CERBOS_GRPC_URL`: Cerbos gRPC URL (default: cerbos:3592)
+
+#### 3. .env.example Template
+Created comprehensive template file with:
+- All required environment variables with placeholder values
+- All optional environment variables with default values
+- Organized sections:
+  - PostgreSQL Database Configuration
+  - Kratos Configuration
+  - Hydra Configuration
+  - Heimdall Configuration
+  - NATS Configuration
+  - Service URLs
+- Inline comments explaining purpose of each variable
+
+#### 4. Kratos Configuration Update
+- Modified `infra/kratos/kratos.yml` to replace hardcoded password
+- Changed DSN from `postgres://kratos:secret-password@kratos-db:5432/kratos?sslmode=disable` to `postgres://kratos:changeme@kratos-db:5432/kratos?sslmode=disable`
+- Added detailed comments explaining:
+  - DSN environment variable takes precedence over config file
+  - Config file value is only used as fallback
+  - Actual DSN comes from docker-compose.yml environment section
+
+#### 5. README.md Documentation
+Updated with comprehensive environment variable documentation:
+
+##### Quick Start Section:
+- Added step to copy `.env.example` to `.env`
+- Added instructions to edit `.env` and set secure values
+- Listed all required variables that must be customized
+- Emphasized PASETO_SYMMETRIC_KEY must be exactly 32 bytes
+
+##### Configuration Section:
+- Complete rewrite with detailed environment variable documentation
+- Separated required variables (no defaults) from optional variables (with defaults)
+- Added security note about never committing `.env` to version control
+- Included example values and descriptions for all variables
+- Referenced `.env.example` as the complete template
+
+### Validation Results:
+
+#### Docker Compose Validation:
+- ✅ Configuration validated successfully with `docker compose config`
+- ✅ All environment variables properly interpolated
+- ✅ Required variables enforce presence check
+- ✅ Optional variables use appropriate defaults
+
+#### YAML Linting:
+- ✅ All syntax errors resolved
+- ✅ All spacing issues fixed
+- ✅ No line length warnings (used multiline syntax)
+- ✅ Only remaining warning: optional document start `---` (not required for docker-compose)
+
+#### Git Validation:
+- ✅ `.env` is already in `.gitignore` (won't be committed)
+- ✅ `.env.example` is tracked and committed
+- ✅ All changes committed successfully
+
+### Security Improvements:
+
+1. **No Hardcoded Secrets**: All passwords, secrets, and keys removed from configuration files
+2. **Required Variables Enforced**: Docker Compose will fail to start if required secrets are not set
+3. **Gitignore Protection**: `.env` file is already in `.gitignore` to prevent accidental commits
+4. **Example Template**: `.env.example` provides safe template with placeholder values
+5. **Documentation**: Clear instructions in README about setting secure values
+
+### Key Design Decisions:
+
+1. **Environment Variable Syntax**:
+   - Used `${VAR:?error message}` for required variables to enforce presence
+   - Used `${VAR:-default}` for optional variables with sensible defaults
+   - This provides clear error messages when required variables are missing
+
+2. **Backward Compatibility**:
+   - Optional variables have defaults matching original hardcoded values
+   - System can still run with just required variables set
+   - Service URLs use Docker Compose service names as defaults
+
+3. **Security First**:
+   - All secrets must be explicitly set via environment variables
+   - No default values for passwords or cryptographic keys
+   - Clear error messages guide users to set required variables
+
+4. **Documentation**:
+   - Comprehensive README updates guide users through setup
+   - `.env.example` serves as a complete template
+   - Comments in configuration files explain variable usage
+
+5. **YAML Best Practices**:
+   - Used multiline syntax for long values
+   - Proper comment spacing throughout
+   - Fixed all syntax errors for valid YAML
+
+### Testing:
+
+1. **Format Validation**: Tested with yamllint - all issues resolved
+2. **Docker Compose Validation**: Tested with `docker compose config` - configuration valid
+3. **Environment Variable Interpolation**: Verified all variables properly replaced
+4. **Missing Variable Detection**: Confirmed required variables cause clear error messages
+5. **Default Values**: Verified optional variables use correct defaults
+
+### Notes:
+- The implementation addresses all requirements from the issue
+- All formatting issues in docker-compose.yml are fixed
+- All passwords and keys are now environment variables
+- `.env.example` provides a complete template for users
+- README documentation guides users through configuration
+- Security is improved by removing hardcoded secrets
+- The solution follows Docker Compose best practices
+- Error messages clearly indicate when required variables are missing
+- The system is production-ready with proper secret management
 
 **Date**: 2025-11-16
 
