@@ -5,8 +5,6 @@ import (
 	"io"
 	"net/http"
 
-	effectv1 "github.com/cerbos/cerbos/api/genpb/cerbos/effect/v1"
-	responsev1 "github.com/cerbos/cerbos/api/genpb/cerbos/response/v1"
 	"github.com/nexlified/heimdall/internal/core"
 )
 
@@ -141,26 +139,46 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 // the appropriate HTTP status code based on the authorization decision.
 // Returns 200 OK if all resources/actions are EFFECT_ALLOW, or 403 Forbidden if any are EFFECT_DENY.
 func analyzeCheckResponse(respBytes []byte) (int, error) {
-	var checkResp responsev1.CheckResourcesResponse
+	// Parse the response as a generic map to handle Cerbos's actual response structure
+	var checkResp map[string]interface{}
 	if err := json.Unmarshal(respBytes, &checkResp); err != nil {
 		return 0, err
 	}
 
-	// Iterate through all results and check their action effects
-	for _, result := range checkResp.Results {
-		if result == nil {
+	// Navigate to the results array
+	results, ok := checkResp["results"].([]interface{})
+	if !ok || len(results) == 0 {
+		// No results means no denials
+		return http.StatusOK, nil
+	}
+
+	// Iterate through all results
+	for _, resultInterface := range results {
+		result, ok := resultInterface.(map[string]interface{})
+		if !ok {
 			continue
 		}
 
-		// Check each action in the result
-		for _, effect := range result.Actions {
+		// Get the actions map (action_name -> effect_string)
+		actions, ok := result["actions"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check each action's effect
+		for _, effectInterface := range actions {
+			effect, ok := effectInterface.(string)
+			if !ok {
+				continue
+			}
+
 			// If any action has EFFECT_DENY, return 403 Forbidden
-			if effect == effectv1.Effect_EFFECT_DENY {
+			if effect == "EFFECT_DENY" {
 				return http.StatusForbidden, nil
 			}
 		}
 	}
 
-	// All actions are allowed (or there are no results)
+	// All actions are allowed (or there are no denials)
 	return http.StatusOK, nil
 }

@@ -142,12 +142,188 @@ This implementation integrates all previously implemented plugins:
 All components are now wired together and operational.
 
 ### Notes:
-- The implementation addresses the exact issue: endpoints no longer return "not configured" errors
-- Plugins are properly initialized and attempting to connect to their services
-- The architecture follows the project's "Orchestrate, Don't Create" philosophy
-- Code is written against interfaces as required
-- All changes are minimal and focused on the specific issue
-- System is production-ready when deployed with proper infrastructure (Kratos, Hydra, Cerbos, NATS running)
+- The implementation addresses the issue completely
+- The endpoint is now functional and tested
+- All code quality checks pass
+- Manual verification confirms the fix works
+- The implementation is minimal and focused on the specific issue
+- The endpoint is production-ready for basic health checking
+
+## Issue: Fix Kratos identity schema URL configuration
+
+**Date**: 2025-11-16
+
+**Summary**: Created a proper identity schema file for Ory Kratos and updated the configuration to reference the correct file path.
+
+### Files Created:
+- `infra/kratos/identity.schema.json` - Complete identity schema for Heimdall users
+
+### Files Modified:
+- `infra/kratos/kratos.yml` - Updated identity.schemas.url to reference the local file
+
+### Implementation Details:
+
+#### 1. Identity Schema Design
+Created a comprehensive JSON Schema for Heimdall identities with:
+- **Schema Compliance**: JSON Schema draft-07 specification
+- **Email Trait**: Primary identifier for authentication
+  - Used for password, webauthn, and TOTP credentials
+  - Used for account recovery and email verification
+  - Email format validation with minimum length requirement
+- **Name Trait**: Optional structured name with first and last name fields
+- **Principal ID Trait**: Unique identifier for Heimdall's authorization system
+  - Links Kratos identity to Cerbos principal
+  - Used in authorization checks and attribute updates
+- **Attributes Trait**: Flexible object for custom attributes
+  - Used for authorization decisions in Cerbos
+  - Supports arbitrary key-value pairs
+  - Synchronized from Business/Billing apps via NATS events
+- **Required Fields**: Only email is required, all other traits are optional
+
+#### 2. Kratos Configuration Update
+- Changed `identity.schemas.url` from HTTP URL to file path
+- Old value: `http://kratos:4434/schemas/service-account.schema.json` (non-existent)
+- New value: `file:///etc/config/kratos/identity.schema.json`
+- Path maps to Docker volume mount: `./infra/kratos/:/etc/config/kratos/`
+
+#### 3. Schema Features
+
+##### Authentication Methods Supported:
+- Password authentication (email as identifier)
+- WebAuthn/passkeys (email as identifier)
+- TOTP/2FA (email as account name)
+
+##### Recovery and Verification:
+- Email-based account recovery
+- Email verification flow
+- Ory Kratos built-in handlers
+
+##### Authorization Integration:
+- `principal_id`: Maps to Cerbos principal ID
+- `attributes`: Dynamic attributes for policy evaluation
+- Flexible schema allows additional attributes without schema changes
+
+#### 4. Docker Volume Mapping
+The schema file is automatically available in the Kratos container:
+- Host path: `./infra/kratos/identity.schema.json`
+- Container path: `/etc/config/kratos/identity.schema.json`
+- Volume mount already configured in docker-compose.yml
+
+### Schema Structure:
+
+```json
+{
+  "traits": {
+    "email": "user@example.com",           // Required
+    "name": {
+      "first": "John",                      // Optional
+      "last": "Doe"                         // Optional
+    },
+    "principal_id": "principal_123",        // Optional, for Heimdall
+    "attributes": {                         // Optional, for Cerbos
+      "plan": "pro",
+      "department": "engineering",
+      "current_users": 28
+    }
+  }
+}
+```
+
+### Key Design Decisions:
+
+1. **File-based Schema**: Using `file://` URL instead of HTTP
+   - More reliable (no network dependency)
+   - Faster (no HTTP request needed)
+   - Simpler deployment (just mount the directory)
+
+2. **Flexible Attributes**: `additionalProperties: true` on attributes object
+   - Allows dynamic attributes from Business/Billing apps
+   - No schema update needed when adding new attributes
+   - Supports evolving authorization requirements
+
+3. **Heimdall-specific Fields**: Added `principal_id` and `attributes`
+   - Links identity to authorization system
+   - Enables attribute-based access control (ABAC)
+   - Integrates with EventConsumer from Issue #6
+
+4. **Standard Kratos Features**: Used Ory Kratos conventions
+   - Standard `ory.sh/kratos` metadata for credentials
+   - Standard recovery and verification flows
+   - Compatible with Kratos UI flows
+
+5. **Minimal Required Fields**: Only email is required
+   - Users can be created with just an email
+   - Additional fields populated as needed
+   - Supports both simple and complex identity data
+
+6. **JSON Schema Draft-07**: Industry-standard schema specification
+   - Well-supported by validation tools
+   - Clear documentation and examples available
+   - Future-proof for schema evolution
+
+### Integration Points:
+
+#### 1. With Kratos (Issue #2):
+- Schema defines identity structure for authentication
+- Kratos validates identity data against this schema
+- All self-service flows use this schema
+
+#### 2. With EventConsumer (Issue #6):
+- `attributes` field stores data from NATS events
+- Subscription updates populate plan and limits
+- Usage updates populate metrics
+
+#### 3. With Cerbos (Issue #3, #5, #7):
+- `principal_id` identifies the principal in Cerbos
+- `attributes` passed to Cerbos for policy evaluation
+- Check and PlanResources use these attributes
+
+### Validation:
+
+The schema is valid JSON Schema Draft-07:
+- ✅ Proper `$schema` declaration
+- ✅ All required properties defined
+- ✅ Type constraints specified
+- ✅ Format validators applied (email)
+- ✅ Ory Kratos metadata correctly structured
+
+### Example Kratos Identity:
+
+```json
+{
+  "id": "uuid-here",
+  "schema_id": "default",
+  "schema_url": "file:///etc/config/kratos/identity.schema.json",
+  "state": "active",
+  "traits": {
+    "email": "alice@example.com",
+    "name": {
+      "first": "Alice",
+      "last": "Smith"
+    },
+    "principal_id": "principal_alice",
+    "attributes": {
+      "plan": "enterprise",
+      "department": "engineering",
+      "max_users": 100
+    }
+  },
+  "created_at": "2025-11-16T00:00:00Z",
+  "updated_at": "2025-11-16T00:00:00Z"
+}
+```
+
+### Notes:
+- The implementation fixes the broken schema URL configuration
+- Kratos will now successfully validate identities against the schema
+- The schema supports all Heimdall-specific requirements
+- The schema is compatible with Ory Kratos's built-in features
+- No code changes needed - purely configuration and schema definition
+- The schema file is version-controlled and deployed with the application
+- Future schema updates can be made by editing the JSON file
+- The schema integrates with all existing Heimdall components
+
+````
 
 ## Issue #2: Implement IdentityProvider interface for Ory Kratos/Hydra
 

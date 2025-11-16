@@ -1,0 +1,66 @@
+{
+  "$id": "https://schemas.heimdall.io/identity.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Heimdall Identity",
+  "type": "object",
+  "properties": {
+    "traits": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "title": "E-Mail",
+          "minLength": 3,
+          "ory.sh/kratos": {
+            "credentials": {
+              "password": {
+                "identifier": true
+              },
+              "webauthn": {
+                "identifier": true
+              },
+              "totp": {
+                "account_name": true
+              }
+            },
+            "recovery": {
+              "via": "email"
+            },
+            "verification": {
+              "via": "email"
+            }
+          }
+        },
+        "name": {
+          "type": "object",
+          "properties": {
+            "first": {
+              "type": "string",
+              "title": "First Name"
+            },
+            "last": {
+              "type": "string",
+              "title": "Last Name"
+            }
+          }
+        },
+        "principal_id": {
+          "type": "string",
+          "title": "Principal ID",
+          "description": "Unique identifier for this principal in Heimdall"
+        },
+        "attributes": {
+          "type": "object",
+          "title": "Custom Attributes",
+          "description": "Additional attributes for authorization decisions",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "email"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,4 +1,4 @@
-version: v1.1.0
+version: v1.3.0
 
 serve:
   public:
@@ -16,14 +16,24 @@ serve:
 # This value is only used as a fallback if DSN env var is not set
 dsn: "postgres://kratos:changeme@kratos-db:5432/kratos?sslmode=disable"
 
+# Identity schema configuration
+identity:
+  default_schema_id: default
+  schemas:
+    - id: default
+      url: file:///etc/config/kratos/identity.schema.json
+
 # Minimal required settings
 selfservice:
+  default_browser_return_url: http://localhost:8080/
   flows:
     login:
       ui_url: http://localhost:8080/login # To be handled by our app/UI
     registration:
       ui_url: http://localhost:8080/registration # To be handled by our app/UI
-
+courier:
+  smtp:
+    connection_uri: smtps://test:test@mailslurper:1025/?skip_ssl_verify=true
 log:
   level: debug
   format: text

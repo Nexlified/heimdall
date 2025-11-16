@@ -1,8 +1,7 @@
+---
 server:
-  http:
-    listenAddr: ":3593"
-  grpc:
-    listenAddr: ":3592"
+  httpListenAddr: ":3593"
+  grpcListenAddr: ":3592"
 
 storage:
   driver: "disk"
@@ -10,6 +9,6 @@ storage:
     directory: /policies
     watchForChanges: true
 
-# Enable a "Hello World" policy
+# Enable schema enforcement
 schema:
   enforcement: reject

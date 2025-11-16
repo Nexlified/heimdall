@@ -17,13 +17,25 @@ services:
     volumes:
       - kratos_data:/var/lib/postgresql/data
 
+  kratos-migrate:
+    image: oryd/kratos:v1.1
+    depends_on:
+      - kratos-db
+    environment:
+      DSN: ${KRATOS_DSN:?KRATOS_DSN must be set}
+    volumes:
+      - ./infra/kratos/:/etc/config/kratos/
+    command: migrate sql -e -c /etc/config/kratos/kratos.yml --yes
+    restart: on-failure
+
   kratos:
     image: oryd/kratos:v1.1
     ports:
       - "4433:4433"  # Public API
       - "4434:4434"  # Admin API
     depends_on:
-      - kratos-db
+      kratos-migrate:
+        condition: service_completed_successfully
     environment:
       DSN: ${KRATOS_DSN:?KRATOS_DSN must be set}
       KRATOS_SERVE_PUBLIC_HOST: "http://localhost:4433"
@@ -62,8 +74,9 @@ services:
       - "3593:3593"  # HTTP
     volumes:
       - ./infra/cerbos/policies:/policies
+      - ./infra/cerbos/config.yaml:/config/config.yaml
     command: >-
-      server --config=/policies/config.yaml
+      server --config=/config/config.yaml
       --set=storage.disk.directory=/policies
 
   heimdall:

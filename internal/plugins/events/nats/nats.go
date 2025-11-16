@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nexlified/heimdall/internal/core"
@@ -73,6 +74,11 @@ type UsageUpdatedEvent struct {
 func (c *Consumer) Consume(pdp core.PolicyEngine) error {
 	if pdp == nil {
 		return errors.New("PolicyEngine is required")
+	}
+
+	// Ensure the required JetStream streams exist
+	if err := c.ensureStreams(); err != nil {
+		return fmt.Errorf("failed to ensure streams exist: %w", err)
 	}
 
 	// Subscribe to subscription.updated events
@@ -145,4 +151,42 @@ func (c *Consumer) Consume(pdp core.PolicyEngine) error {
 	// In a production environment, this would be controlled by a context or signal
 	log.Println("INFO: EventConsumer is listening for events...")
 	select {}
+}
+
+// ensureStreams creates the required JetStream streams if they don't exist.
+// This method is idempotent - it will not fail if streams already exist.
+func (c *Consumer) ensureStreams() error {
+	// Define the streams we need
+	streams := []struct {
+		name     string
+		subjects []string
+	}{
+		{
+			name:     "HEIMDALL_EVENTS",
+			subjects: []string{"subscription.updated", "usage.updated"},
+		},
+	}
+
+	// Create each stream if it doesn't exist
+	for _, stream := range streams {
+		// Check if stream already exists
+		_, err := c.js.StreamInfo(stream.name)
+		if err != nil {
+			// Stream doesn't exist, create it
+			_, err = c.js.AddStream(&nats.StreamConfig{
+				Name:     stream.name,
+				Subjects: stream.subjects,
+				Storage:  nats.FileStorage, // Use file storage for durability
+				MaxAge:   24 * 7 * time.Hour, // Retain messages for 7 days
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create stream %s: %w", stream.name, err)
+			}
+			log.Printf("INFO: Created JetStream stream: %s with subjects %v", stream.name, stream.subjects)
+		} else {
+			log.Printf("INFO: JetStream stream already exists: %s", stream.name)
+		}
+	}
+
+	return nil
 }
