@@ -116,6 +116,18 @@ func (h *HTTPHandlers) HandlePlanResources(w http.ResponseWriter, r *http.Reques
 	w.Write(resp)
 }
 
+// HandleHealth is a simple health check endpoint that returns the service status.
+// This endpoint is used by load balancers, orchestrators, and monitoring tools
+// to verify that the service is running and ready to accept requests.
+func (h *HTTPHandlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	response := map[string]string{
+		"status": "ok",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
 // writeJSON is a simple helper
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	// In a real app, you'd use a more robust JSON encoder

@@ -338,3 +338,26 @@ func TestAnalyzeCheckResponse(t *testing.T) {
 		})
 	}
 }
+
+// TestHandleHealth tests the health check endpoint
+func TestHandleHealth(t *testing.T) {
+	app := &core.Application{
+		PDP: nil, // Health endpoint doesn't depend on PDP
+		IDP: nil, // Health endpoint doesn't depend on IDP
+	}
+	handlers := NewHTTPHandlers(app)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+
+	handlers.HandleHealth(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	// Verify the response body contains expected JSON
+	var response map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "ok", response["status"])
+}
