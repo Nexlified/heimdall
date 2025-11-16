@@ -909,3 +909,123 @@ checkRequest := CheckRequest{
   2. ✅ PlanResources (Issue #5)
   3. ✅ UpdateAttributes (Issue #7)
 
+## Issue: Fix /health endpoint returning 404
+
+**Date**: 2025-11-16
+
+**Summary**: Implemented the `/health` endpoint that was documented in the README but not actually implemented in the codebase.
+
+### Files Modified:
+- `internal/handlers/http.go` - Added HandleHealth handler method
+- `cmd/heimdall/main.go` - Registered /health route
+- `internal/handlers/http_test.go` - Added comprehensive unit test
+
+### Implementation Details:
+
+#### 1. HandleHealth Handler Method
+- Added `HandleHealth` method to `HTTPHandlers` struct
+- Returns a simple JSON response with `{"status": "ok"}`
+- Sets appropriate Content-Type header (`application/json`)
+- Returns HTTP 200 OK status code
+- Does not require any dependencies (no IDP or PDP needed)
+- Designed for use by load balancers, orchestrators, and monitoring tools
+
+#### 2. Route Registration
+- Registered `/health` endpoint as a GET route in main.go
+- Placed at the top level (not within any route group)
+- Added before authentication routes for visibility
+- Uses `r.Get("/health", h.HandleHealth)` syntax
+
+#### 3. JSON Response Format
+```json
+{
+  "status": "ok"
+}
+```
+
+### Test Coverage:
+
+#### Unit Test Created:
+**TestHandleHealth**: Tests the health check endpoint
+- Creates HTTPHandlers with nil IDP and PDP (health check doesn't need them)
+- Makes GET request to /health
+- Verifies HTTP 200 OK status code
+- Verifies Content-Type header is "application/json"
+- Unmarshals response JSON and verifies status is "ok"
+
+#### Test Results:
+- Test passes ✅
+- All existing tests still pass ✅
+- No linting issues ✅
+- No `go vet` warnings ✅
+- Builds successfully ✅
+
+### Manual Verification:
+
+#### Before Fix:
+```bash
+$ curl -i http://localhost:8080/health
+HTTP/1.1 404 Not Found
+Content-Type: text/plain; charset=utf-8
+Content-Length: 19
+
+404 page not found
+```
+
+#### After Fix:
+```bash
+$ curl -i http://localhost:8080/health
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 16
+
+{"status":"ok"}
+```
+
+### Key Design Decisions:
+
+1. **Simple Implementation**: Health endpoint is intentionally simple and lightweight
+   - No dependencies on IDP or PDP
+   - No complex health checks of dependencies
+   - Fast response for high-frequency health checks
+
+2. **JSON Response**: Uses JSON for consistency with other API endpoints
+   - Easy to parse by monitoring tools
+   - Follows REST API best practices
+
+3. **200 OK Status**: Returns success when service is running
+   - Load balancers can mark service as healthy
+   - Could be enhanced in the future to check dependency health
+
+4. **Placement in Router**: Registered at top level before auth routes
+   - Makes it obvious in the code
+   - Follows the pattern documented in README
+
+5. **Comments**: Added detailed comments explaining the purpose and usage of the health endpoint
+
+### README Alignment:
+
+The implementation fulfills the expectation set in the README.md Quick Start section:
+```bash
+# Verify Heimdall is running
+curl http://localhost:8080/health
+```
+
+This command now works as documented and returns a proper 200 OK response.
+
+### Future Enhancements (not in scope):
+
+The health endpoint could be enhanced to:
+1. Check connectivity to Kratos, Hydra, Cerbos, and NATS
+2. Return detailed status for each dependency
+3. Differentiate between "degraded" and "healthy" states
+4. Implement a separate `/ready` endpoint for readiness checks
+
+### Notes:
+- The implementation addresses the issue completely
+- The endpoint is now functional and tested
+- All code quality checks pass
+- Manual verification confirms the fix works
+- The implementation is minimal and focused on the specific issue
+- The endpoint is production-ready for basic health checking
+

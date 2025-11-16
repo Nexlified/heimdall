@@ -62,6 +62,9 @@ func main() {
 	// Initialize handlers, passing the application core
 	h := handlers.NewHTTPHandlers(app)
 
+	// Health check endpoint
+	r.Get("/health", h.HandleHealth)
+
 	// Public routes for authentication
 	r.Route("/auth", func(r chi.Router) {
 		r.Get("/login", h.HandleLogin)
