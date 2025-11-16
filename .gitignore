@@ -1,0 +1,24 @@
+# Go build artifacts
+*.o
+*.a
+*.so
+_obj/
+_test/
+_testmain.go
+*.exe
+*.test
+*.prof
+*.out
+/bin
+/vendor/
+
+# Local environment files
+.env
+*.env.local
+
+# IDE settings
+.idea/
+.vscode/
+
+# Docker
+docker-compose.override.yml
