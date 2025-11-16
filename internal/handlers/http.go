@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
+	effectv1 "github.com/cerbos/cerbos/api/genpb/cerbos/effect/v1"
+	responsev1 "github.com/cerbos/cerbos/api/genpb/cerbos/response/v1"
 	"github.com/nexlified/heimdall/internal/core"
 )
 
@@ -76,11 +79,16 @@ func (h *HTTPHandlers) HandleCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Analyze the 'resp' (which is a Cerbos response)
-	// and return a simple 200 OK or 403 Forbidden.
-	// For now, just proxy the response.
+	// Analyze the Cerbos response to determine if the request should be allowed or denied.
+	// Return 200 OK if all resources are EFFECT_ALLOW, or 403 Forbidden if any are EFFECT_DENY.
+	statusCode, err := analyzeCheckResponse(resp)
+	if err != nil {
+		http.Error(w, "Failed to analyze policy response: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(statusCode)
 	w.Write(resp)
 }
 
@@ -118,4 +126,32 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 		b, _ := io.ReadAll(nil) // Placeholder for actual JSON marshalling
 		w.Write(b)
 	}
+}
+
+// analyzeCheckResponse parses a Cerbos CheckResourcesResponse and determines
+// the appropriate HTTP status code based on the authorization decision.
+// Returns 200 OK if all resources/actions are EFFECT_ALLOW, or 403 Forbidden if any are EFFECT_DENY.
+func analyzeCheckResponse(respBytes []byte) (int, error) {
+	var checkResp responsev1.CheckResourcesResponse
+	if err := json.Unmarshal(respBytes, &checkResp); err != nil {
+		return 0, err
+	}
+
+	// Iterate through all results and check their action effects
+	for _, result := range checkResp.Results {
+		if result == nil {
+			continue
+		}
+
+		// Check each action in the result
+		for _, effect := range result.Actions {
+			// If any action has EFFECT_DENY, return 403 Forbidden
+			if effect == effectv1.Effect_EFFECT_DENY {
+				return http.StatusForbidden, nil
+			}
+		}
+	}
+
+	// All actions are allowed (or there are no results)
+	return http.StatusOK, nil
 }
