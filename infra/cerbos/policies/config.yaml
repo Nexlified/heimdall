@@ -1,0 +1,15 @@
+server:
+  http:
+    listenAddr: ":3593"
+  grpc:
+    listenAddr: ":3592"
+
+storage:
+  driver: "disk"
+  disk:
+    directory: /policies
+    watchForChanges: true
+
+# Enable a "Hello World" policy
+schema:
+  enforcement: reject
